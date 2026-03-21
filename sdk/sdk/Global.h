@@ -1,0 +1,119 @@
+﻿#pragma once
+#include "data.h"
+#include <set>
+#include <vector>
+#include <string>
+#include <math.h>
+#include <sstream>
+#include <iomanip>
+#ifdef _WIN32
+#pragma warning(disable:4996)
+#include <Windows.h>
+#ifndef sleep(sec)   Sleep(sec * 1000)
+#define sleep(sec)   Sleep(sec * 1000)
+#endif
+#define msleep(msec) Sleep(msec)
+#elif __linux
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <termios.h>
+#define msleep(msec) usleep(msec * 1000)
+#endif
+struct UARTARG
+{
+    char portName[16];
+    int port;
+};
+
+namespace BaseAPI {
+    bool checkAndMerge(int type, char* ip, char* mask, char* gateway, int port, char* result);
+    std::string stringfilter(char *str,int num);
+}
+
+namespace ParseAPI {
+
+	// 解析结果枚举
+	enum ParseResult {
+		PARSE_ERROR = -1,           // 解析错误/数据不完整
+		PARSE_INCOMPLETE = 0,		// 扇区未收全
+		PARSE_OK_DATA = 1,          // 成功解析出点云数据
+		PARSE_OK_MSG = 2,           // LMSG
+		PARSE_OK_EEPROM = 3,        // EPRM
+		PARSE_OK_TIMESYNC = 4,      // 时间同步
+		PARSE_OK_CPACK = 5,         // C_PACK
+		PARSE_OK_SPACK = 6,         // S_PACK
+		PARSE_OK_READZONE = 7,      // readzone
+		PARSE_OK_WRITEZONE = 8,     // writezone
+		PARSE_OK_STED = 9,			// STED
+	};
+
+	int parse_data_x(unsigned int len, unsigned char* buf,UartState *uartstate,RawData& dat, int& consume, int with_chk,int &byte, char *result,CmdHeader *cmdheader,void** fan_segs);
+	int parse_data(unsigned int len, unsigned char* buf,UartState *uartstate,RawData& dat, int& consume, int with_chk);
+}
+
+namespace UserAPI {
+    void fan_data_process(const RawData& raw, std::vector<RawData>& whole_datas);
+    int whole_data_process(const RawData& raw,int collect_angle, std::vector<RawData> &whole_datas,std::string &error);
+    int autoGetFirstAngle(const RawData &raw, bool from_zero, std::vector<RawData> &raws,std::string &error);
+}
+
+namespace AlgorithmAPI{
+    //E100
+    int ShadowsFilter(UserData*, const ShadowsFilterParam&);
+    int MedianFilter(UserData*, const MedianFilterParam&);
+    //E330
+    bool filter(std::vector<DataPoint>& output_scan,double max_range,double min_range,double max_range_difference,int filter_window,double angle_increment);
+}
+
+namespace SystemAPI {
+    int GetComList(std::vector<UARTARG>& list);
+    int closefd(int __fd, bool isSocket);
+    std::vector<std::string> GetComPort();
+    int open_serial_port(const char* name, int speed);
+    int open_socket_port(int localhost);
+	//得当前时间戳(ms)
+	uint64_t GetTimeStampNow();
+	//串口是否存在
+	bool uart_exist(const char *dev);
+	//得当前时间 YYYY-MM-DD HH:MM:SS.mmm
+	std::string GetTimeYMDHMSms();
+}
+int GetDevInfoByVPC(const char* port_str, int speed);
+int GetDevInfoByUART(const char* port_str, int speed);
+
+
+
+
+namespace CommunicationAPI {
+    void send_cmd_vpc(int hCom, int mode, int sn, int len, const char* cmd);
+    bool uart_talk(int hCom, int n, const char* cmd, int nhdr, const char* hdr_str, int nfetch, char* fetch,int waittime=100);
+    bool vpc_talk(int hCom, int mode, short sn, int len, const char* cmd, int nfetch, void* fetch);
+    void send_cmd_udp(int fd_udp, const char* dev_ip, int dev_port, int cmd, int sn, int len, const void* snd_buf);
+    bool udp_talk_C_PACK(int fd_udp, const char* lidar_ip, int lidar_port, int n, const char* cmd, int nhdr, const char* hdr_str, int nfetch, char* fetch);
+    bool udp_talk_S_PACK(int fd_udp, const char* ip, int port, int n, const char* cmd, void* result);
+    bool udp_talk_GS_PACK(int fd_udp, const char* ip, int port, int n, const char* cmd, void* result);
+}
+
+
+
+unsigned int stm32crc(unsigned int* ptr, unsigned int len);
+
+#ifdef _WIN32
+    void gettimeofday(timeval* tv, void*);
+#endif
+
+
+#ifdef _WIN32
+    int Open_serial_port(const char* name, int port);
+    int read(int __fd, void* __buf, int __nbytes);
+    int write(int __fd, const void* __buf, int __n);
+#elif __linux__
+    extern "C"  int change_baud(int fd, int baud);
+    int Open_serial_port(const char* name, int port);
+#endif
+
+bool judgepcIPAddrIsValid(const char* pcIPAddr);

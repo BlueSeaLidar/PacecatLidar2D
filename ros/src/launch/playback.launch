@@ -1,0 +1,38 @@
+<launch>
+ <group ns="lidar1">
+  <node name="lidar01_playback" pkg="pacecat" type="pacecat_playback_node" output="screen">
+    #ROS#	
+    <param name="frame_id" value="map"/>
+    <param name="topic_scan" value="scan"/>	
+    <param name="topic_cloud" value="cloud"/>
+    #DATA#
+    <param name="output_scan" value="true"/>
+    <param name="output_cloud" value="false"/>
+    <param name="output_cloud2" value="false"/>
+    <param name="log_path" value="/data40/TestFile/test.pcap"/>
+    <param name="log_file_format" value="pcap"/> #日志文件中数据的格式:pcap bin hex
+    <param name="playback_rate" value="-1"/> #单位:Hz,填10就是10hz，每秒播 10 帧; 填-1速率从原帧里读取
+    <param name="rotation_direction" value="-1"/> #填-1速率从原帧里读取 如果没读到 默认用1; 填1逆时针 填0顺时针
+    <param name="hard_resample" value="false"/>
+    <param name="soft_resample" value="false"/>
+    <param name="resample_res" value="-1"/>
+    <param name="error_circle" value="3"/>
+    <param name="error_scale" value="0.9"/>
+    <param name="with_angle_filter" value="false"/>
+    <param name="min_angle" value="-3"/>
+    <param name="max_angle" value="3"/> 
+    <param name="min_dist" value="0.001"/>
+    <param name="max_dist" value="80.0"/>
+    <param name="from_zero" value="false"/>
+    <param name="reversed" value="false"/>
+    <rosparam param="mask1" >[0,1.5]</rosparam>
+    <rosparam param="mask2" >[-3,-1.5]</rosparam>
+    #FITTER#
+    <param name="filter_open" value="false"/>
+    <param name="max_range" value="20"/>
+    <param name="min_range" value="0.5"/>
+    <param name="max_range_difference" value="0.1"/>
+    <param name="filter_window" value="1"/>
+  </node>
+ </group>
+</launch>

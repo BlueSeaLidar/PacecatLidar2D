@@ -1,0 +1,75 @@
+#!/usr/bin/python3
+
+from ament_index_python.packages import get_package_share_directory
+
+from launch import LaunchDescription
+from launch_ros.actions import LifecycleNode
+from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch.actions import LogInfo
+
+import lifecycle_msgs.msg
+import os
+
+def generate_launch_description():
+    share_dir = get_package_share_directory('pacecat')
+    
+    parameter_file1 = LaunchConfiguration('params_file1')
+    parameter_file2 = LaunchConfiguration('params_file2')
+    parameter_file3 = LaunchConfiguration('params_file3')
+    parameter_file4 = LaunchConfiguration('params_file4')
+    
+    params_declare1 = DeclareLaunchArgument('params_file1',
+                                           default_value=os.path.join(
+                                               share_dir, 'params', 'multi_node_udp_lidar_1.yaml'),
+                                           description='FPath to the ROS2 parameters file to use.')                                       
+     
+    params_declare2 = DeclareLaunchArgument('params_file2',
+                                           default_value=os.path.join(
+                                               share_dir, 'params', 'multi_node_udp_lidar_2.yaml'),
+                                           description='FPath to the ROS2 parameters file to use.')
+                                           
+    params_declare3 = DeclareLaunchArgument('params_file3',
+                                           default_value=os.path.join(
+                                               share_dir, 'params', 'multi_node_udp_lidar_3.yaml'),
+                                           description='FPath to the ROS2 parameters file to use.')
+                                           
+    params_declare4 = DeclareLaunchArgument('params_file4',
+                                           default_value=os.path.join(
+                                               share_dir, 'params', 'multi_node_udp_lidar_4.yaml'),
+                                           description='FPath to the ROS2 parameters file to use.')                                      
+                                           
+
+    #对多版本的兼容性处理 首字母e以及之前为18.04或更早,之后为20.04或更晚
+    ROS_DISTRO=''
+    ROS_DISTRO = os.getenv('ROS_DISTRO')
+    print("Current ROS2 Version: ",ROS_DISTRO)
+    if ROS_DISTRO[0] <= 'e':
+        try:
+            driver_node1 = LifecycleNode( node_name='pacecat_node', node_namespace='/lidar1', package='pacecat', node_executable='pacecat_node', output='screen', parameters=[parameter_file1])
+            driver_node2 = LifecycleNode( node_name='pacecat_node', node_namespace='/lidar2', package='pacecat', node_executable='pacecat_node', output='screen', parameters=[parameter_file2])
+            driver_node3 = LifecycleNode( node_name='pacecat_node', node_namespace='/lidar3', package='pacecat', node_executable='pacecat_node', output='screen', parameters=[parameter_file3])
+            driver_node4 = LifecycleNode( node_name='pacecat_node', node_namespace='/lidar4', package='pacecat', node_executable='pacecat_node', output='screen', parameters=[parameter_file4])
+        except:
+            pass
+    else :
+        try:
+            driver_node1 = LifecycleNode( name='pacecat_node', namespace='/lidar1', package='pacecat', executable='pacecat_node', output='screen', emulate_tty=True, parameters=[parameter_file1])
+            driver_node2 = LifecycleNode( name='pacecat_node', namespace='/lidar2', package='pacecat', executable='pacecat_node', output='screen', emulate_tty=True, parameters=[parameter_file2])
+            driver_node3 = LifecycleNode( name='pacecat_node', namespace='/lidar3', package='pacecat', executable='pacecat_node', output='screen', emulate_tty=True, parameters=[parameter_file3])
+            driver_node4 = LifecycleNode( name='pacecat_node', namespace='/lidar4', package='pacecat', executable='pacecat_node', output='screen', emulate_tty=True, parameters=[parameter_file4])
+        except:
+            pass
+
+
+    return LaunchDescription([
+        params_declare1,
+        params_declare2,
+        params_declare3,
+        params_declare4,
+        driver_node1,
+        driver_node2,
+        driver_node3,
+        driver_node4
+    ])

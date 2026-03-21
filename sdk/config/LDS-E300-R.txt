@@ -1,0 +1,25 @@
+#connect
+type:uart
+#windows  com name
+#connectArg:com1
+#linux com name
+connectArg:/dev/ttyUSB0
+#baud rate 768000 1000000
+connectArg2:768000
+#data
+output_360:1
+from_zero:0
+service_port:8888
+is_open_service:1
+error_circle:3
+error_scale:0.9
+#get
+model:1
+version:1
+#set
+unit_is_mm:-1
+with_confidence:-1
+with_smooth:1
+with_deshadow:1
+resample_res:1
+rpm:-1

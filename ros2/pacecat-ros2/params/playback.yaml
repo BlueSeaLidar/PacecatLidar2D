@@ -1,0 +1,33 @@
+pacecat_playback:
+  ros__parameters:
+  #ROS2#
+    frame_id: "map"
+    scan_topic: "scan"
+    cloud_topic: "cloud"
+  #DATA#
+    output_scan: true
+    output_cloud2: false  	    	
+    log_path: "/data40/TestFile/raw.hex" #日志文件中数据的格式:pcap bin hex
+    log_file_format: "hex" #日志文件中数据的格式:pcap bin hex	
+    playback_rate: -1 #单位:Hz,填10就是10hz，每秒播 10 帧; 填-1速率从原帧里读取
+    rotation_direction: -1 #填-1速率从原帧里读取 如果没读到 默认用1; 填1逆时针 填0顺时针
+    hard_resample: false
+    soft_resample: false
+    resample_res: -1.0
+    error_circle: 3
+    error_scale: 0.9
+    with_angle_filter: false
+    min_angle: -3.1415926
+    max_angle: 3.1415926
+    min_dist: 0.01
+    max_dist: 50.0
+    from_zero: false
+    reversed: false
+    # mask1: "0,1.5"
+    # mask2: "-3,-1.5"
+  #FITTER#
+    filter_open: false
+    max_range: 20.0
+    min_range: 0.5
+    max_range_difference: 0.1
+    filter_window: 1 

@@ -1,0 +1,9 @@
+tmp/
+.qtc_clangd/
+debug/
+release/
+build/
+.vs/
+*.user
+*.filters
+Makefile.*
