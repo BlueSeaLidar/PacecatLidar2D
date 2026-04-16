@@ -597,7 +597,7 @@ int UartReader(UartInfo *info)
 		if (FD_ISSET(fd_uart, &fds))
 		{
 			unsigned char buf[512];
-			unsigned int nr = read(fd_uart, buf, sizeof(buf));
+			int nr = read(fd_uart, buf, sizeof(buf));
 			if (nr <= 0)
 			{
 				//printf("read port error %d\n", nr);
