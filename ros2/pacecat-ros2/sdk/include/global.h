@@ -36,6 +36,10 @@ namespace SystemAPI
     uint64_t GetTimeStampNow();
     std::string GetTimeYMDHMSms();
     uint64_t getTimestamp(TimeUnit unit);
+    //uart
+    int Read(int __fd, void* __buf, int __nbytes);
 }
+
+extern int g_uart_record_enabled;
 
 #endif

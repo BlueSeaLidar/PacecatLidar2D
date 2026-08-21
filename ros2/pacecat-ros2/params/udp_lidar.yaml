@@ -44,7 +44,11 @@ pacecat_node:
     rpm: -1
     direction:  -1
     ats: -1
-  #NTP
+  #TIME_MODE#
+    time_mode: 0 	  
+  #NTP#
     ntp_ip: "192.168.158.50"
     ntp_port: 5678
     ntp_enable: -1
+  #PTP#
+    ptp_enable: -1	  

@@ -8,6 +8,7 @@
 //#include "sensor_msgs/point_cloud_conversion.hpp"
 #include "base/srv/control.hpp"
 #include <sys/time.h>
+#include "../sdk/include/global.h"
 #include "../sdk/include/pacecat.h"
 
 PaceCatLidarDriver *m_driver = NULL;
@@ -400,6 +401,32 @@ bool control_motor(const std::shared_ptr<base::srv::Control::Request> req, std::
 		cmd = tmp;
 		proto = 0x0053;
 	}
+	else if (req->func == "record")
+	{
+		if (req->params == "start")
+		{
+			g_uart_record_enabled = 1;
+			res->code = 1;
+			res->value = "UART recording started, saving to /tmp/uart_record_YYYYMMDD_HHMMSS.bin";
+		}
+		else if (req->params == "stop")
+		{
+			g_uart_record_enabled = 0;
+			res->code = 1;
+			res->value = "UART recording stopped";
+		}
+		else
+		{
+			res->code = -1;
+			res->value = "usage: record start/stop";
+		}
+		return true;
+	}
+	else if (req->func == "urer")
+	{
+		cmd = "LURERH";
+		proto = 0x0043;
+	}
 	else
 	{
 		DEBUG("unknown action:%s", req->func.c_str());
@@ -580,6 +607,7 @@ bool ProfileInit(std::shared_ptr<rclcpp::Node> node, ArgData &argdata)
 	READ_PARAM(std::string, "ntp_ip", argdata.ntp_ip, "192.168.158.50"); // 0 : distance is CM, 1: MM
 	READ_PARAM(int, "ntp_port", argdata.ntp_port, 5678);
 	READ_PARAM(int, "ntp_enable", argdata.ntp_enable, -1);
+	READ_PARAM(int, "ptp_enable", argdata.ptp_enable, -1);
 
 	READ_PARAM(bool, "log_enable", argdata.log_enable, false);
 	READ_PARAM(std::string, "log_path", argdata.log_path, "/tmp/ros_log");

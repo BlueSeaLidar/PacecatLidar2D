@@ -33,7 +33,6 @@
 	- vpc_lidar.launch:                 虚拟串口连接方式的激光雷达
 	- dual_udp_lidar.launch:            多个udp网络通讯的激光雷达（单节点多线程）
 	- template.launch:                  全部参数定义模版
-	- heart_check.launch:               雷达运行检测开关打印
 	- LDS-U50C-S(only).launch:          老款雷达，仅支持数据通讯
 	- LDS-U80C-S(only).launch:          老款雷达，仅支持数据通讯
 	- multi_node_udp_lidar.launch:      多个udp网络通讯的激光雷达（多节点）
@@ -87,11 +86,15 @@
     <param name="with_deshadow" value="-1" />#设置滤波,-1不设置 0关闭 1打开
     <param name="alarm_msg" value="-1"/>#设置报警信息,-1不设置 0关闭 1打开
     <param name="direction" value="-1"/>#设置旋转方向(仅支持该指令的雷达使用),-1不设置 0关闭 1打开
+    #TIME_MODE#
+    <param name="time_mode" value="0"/>#时间同步开启参数	0:不同步，使用本地系统时间(若配NTP/PTP自动切换到1(开启同步)), 1:同步，使用设备时间戳(依NTP/PTP配置发指令, 二者均未开启时发keepalive(本地系统时间同步))
     #NTP#
     <param name="ntp_ip" value="192.168.0.111" /># NTP 服务器地址
     <param name="ntp_port" value="5678" />#NTP 服务器端口
     <param name="ntp_enable" value="1"/>#使能开关
-
+    #PTP#
+    <param name="ptp_enable" value="1"/>#使能开关
+	
 ## 驱动客户端功能说明 
 源码位于src/client.cpp
 启停旋转：
@@ -108,6 +111,18 @@
 
 	rosrun pacecat  pacecat_client scan rpm  600 
     参数1 是话题   参数2是动作(set rpm)  参数3是设置rpm的值
+
+录制串口原始数据：
+
+	rosrun pacecat  pacecat_client scan record start
+    参数1 是话题   参数2是动作(record)  参数3是 start(开始录制) / stop(停止录制)
+
+录制文件保存在 /tmp/uart_record_日期时间.bin，每次 start 生成一个新文件，不会覆盖之前的录制数据。可用于排查串口数据解析异常问题。
+
+查询编码器错误：
+
+	rosrun pacecat  pacecat_client scan urer
+    参数1 是话题   参数2是动作(urer) - 查询编码器错误
 		
 ## rosbag包操作说明
 

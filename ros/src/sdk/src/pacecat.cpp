@@ -11,7 +11,6 @@ PaceCatLidarDriver::~PaceCatLidarDriver()
 }
 void PaceCatLidarDriver::getInitCmds(ArgData &argdata)
 {
-	m_argdata = argdata;
 	if (argdata.uuid >= 0)
 		sprintf(m_cmdlist.uuid, "LUUIDH");
 	if (argdata.model >= 0)
@@ -61,45 +60,72 @@ void PaceCatLidarDriver::getInitCmds(ArgData &argdata)
 		else if (argdata.type == "udp")
 			sprintf(m_cmdlist.ats, "LSATS:001H");
 	}
-	if (argdata.ntp_enable >= 0)
+	
+	// If time_mode=0 but NTP/PTP is configured, auto-switch to time_mode=1
+	if (argdata.time_mode == 0 && (argdata.ntp_enable >= 0 || argdata.ptp_enable >= 0))
 	{
-		if (argdata.type == "udp")
-		{
-			bool ret = judgepcIPAddrIsValid(argdata.ntp_ip.data());
-			if (!ret)
-			{
-				ERROR((int)NTP_IP_FORMAT_ERROR, Error::GetErrorString(NTP_IP_FORMAT_ERROR).c_str());
-				return;
-			}
-			char ip_1[4];
-			char ip_2[4];
-			char ip_3[4];
-			char ip_4[4];
-			ip_1[3] = '\0';
-			ip_2[3] = '\0';
-			ip_3[3] = '\0';
-			ip_4[3] = '\0';
+		argdata.time_mode = 1;
+	}
 
-			int idx[3];
-			int index = 0;
-			int ip_len = argdata.ntp_ip.size();
-			const char *ntp_ip = argdata.ntp_ip.data();
-			for (int i = 0; i < ip_len; i++)
+	if (argdata.time_mode == 1)
+	{
+		if (argdata.ntp_enable == 1 && argdata.ptp_enable == 1)
+		{
+			ERROR((int)NTP_PTP_CONFLICT, Error::GetErrorString(NTP_PTP_CONFLICT).c_str());
+			return;
+		}
+		else
+		{
+			if (argdata.ntp_enable >= 0)
 			{
-				if (ntp_ip[i] == '.')
+				if (argdata.type == "udp")
 				{
-					idx[index] = i;
-					index++;
+					bool ret = judgepcIPAddrIsValid(argdata.ntp_ip.data());
+					if (!ret)
+					{
+						ERROR((int)NTP_IP_FORMAT_ERROR, Error::GetErrorString(NTP_IP_FORMAT_ERROR).c_str());
+						return;
+					}
+					char ip_1[4];
+					char ip_2[4];
+					char ip_3[4];
+					char ip_4[4];
+					ip_1[3] = '\0';
+					ip_2[3] = '\0';
+					ip_3[3] = '\0';
+					ip_4[3] = '\0';
+
+					int idx[3];
+					int index = 0;
+					int ip_len = argdata.ntp_ip.size();
+					const char *ntp_ip = argdata.ntp_ip.data();
+					for (int i = 0; i < ip_len; i++)
+					{
+						if (ntp_ip[i] == '.')
+						{
+							idx[index] = i;
+							index++;
+						}
+					}
+
+					memcpy(ip_1, &ntp_ip[0], idx[0]);
+					memcpy(ip_2, &ntp_ip[idx[0] + 1], idx[1] - idx[0] - 1);
+					memcpy(ip_3, &ntp_ip[idx[1] + 1], idx[2] - idx[1] - 1);
+					memcpy(ip_4, &ntp_ip[idx[2] + 1], ip_len - idx[2]);
+					sprintf(m_cmdlist.ntp, "LSNTP:%d,%03d.%03d.%03d.%03d,%05dH", argdata.ntp_enable, atoi(ip_1), atoi(ip_2), atoi(ip_3), atoi(ip_4), argdata.ntp_port);
 				}
 			}
-
-			memcpy(ip_1, &ntp_ip[0], idx[0]);
-			memcpy(ip_2, &ntp_ip[idx[0] + 1], idx[1] - idx[0] - 1);
-			memcpy(ip_3, &ntp_ip[idx[1] + 1], idx[2] - idx[1] - 1);
-			memcpy(ip_4, &ntp_ip[idx[2] + 1], ip_len - idx[2]);
-			sprintf(m_cmdlist.ntp, "LSNTP:%d,%03d.%03d.%03d.%03d,%05dH", argdata.ntp_enable, atoi(ip_1), atoi(ip_2), atoi(ip_3), atoi(ip_4), argdata.ntp_port);
+			if (argdata.ptp_enable >= 0)
+			{
+				if (argdata.type == "udp")
+				{
+					sprintf(m_cmdlist.ptp, "LSPTP:%dH", argdata.ptp_enable);
+				}
+			}
 		}
 	}
+
+	m_argdata = argdata;
 }
 
 void PaceCatLidarDriver::openLidarThread()

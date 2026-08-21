@@ -89,11 +89,15 @@ Main parameter configuration instructions：
     <param name="with_deshadow" value="-1" />#Set filtering, -1 not set 0 off 1 on
     <param name="alarm_msg" value="-1" />#set alarm message, -1 not set 0 off 1 on
     <param name="direction" value="-1"/>#Set direction of rotation(only used by lidar which support this command),-1 not set 0 off 1 on
+    #TIME_MODE#
+    <param name="time_mode" value="0"/>#Time synchronization enable parameter	0: No synchronization, use local system time (auto switches to 1 to enable if NTP/PTP configured), 1: Synchronize, use device timestamp (send commands per NTP/PTP configuration, send keepalive if neither enabled (local system time synchronization))
     #NTP#
     <param name="ntp_ip" value="192.168.0.111" /># NTP service ip
     <param name="ntp_port" value="5678" />#NTP service port
     <param name="ntp_enable" value="1"/># enable or not
-
+    #PTP#
+    <param name="ptp_enable" value="1"/># enable or not
+	
 ## Driver Client Functional Description
 source code locate at src/client.cpp
 start/stop rotate：
@@ -110,6 +114,18 @@ set rpm：
 
 	ros2 run pacecat  pacecat_client scan rpm  600   
     arg1 is topic   arg2 is action(set rpm)  arg3 is rpm value(600)
+
+record UART raw data：
+
+	ros2 run pacecat  pacecat_client scan record start
+    arg1 is topic   arg2 is action(record)  arg3 is start / stop
+
+Recorded files are saved to /tmp/uart_record_datetime.bin. Each start creates a new file without overwriting previous ones. Useful for debugging UART data parsing issues.
+
+query encoder error：
+
+	ros2 run pacecat  pacecat_client scan urer
+    arg1 is topic   arg2 is action(urer) - query encoder error value
 
 ## rosbag bag operating instructions
 

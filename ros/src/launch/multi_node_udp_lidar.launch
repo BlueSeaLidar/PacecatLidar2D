@@ -42,6 +42,8 @@
     <param name="ntp_ip" value="192.168.0.111" />
     <param name="ntp_port" value="5678" />
     <param name="ntp_enable" value="-1"/>
+    #PTP#
+    <param name="ptp_enable" value="-1"/>
   </node>
  </group>
  <group ns="lidar2">
@@ -87,6 +89,8 @@
     <param name="ntp_ip" value="192.168.0.111" />
     <param name="ntp_port" value="5678" />
     <param name="ntp_enable" value="-1"/>
+    #PTP#
+    <param name="ptp_enable" value="-1"/>
   </node>
  </group>
  <group ns="lidar3">
@@ -132,6 +136,8 @@
     <param name="ntp_ip" value="192.168.0.111" />
     <param name="ntp_port" value="5678" />
     <param name="ntp_enable" value="-1"/>
+    #PTP#
+    <param name="ptp_enable" value="-1"/>
   </node>
  </group>
  <group ns="lidar4">
@@ -177,6 +183,8 @@
     <param name="ntp_ip" value="192.168.0.111" />
     <param name="ntp_port" value="5678" />
     <param name="ntp_enable" value="-1"/>
+    #PTP#
+    <param name="ptp_enable" value="-1"/>
   </node>
  </group>
 </launch>

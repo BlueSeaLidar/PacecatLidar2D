@@ -255,6 +255,16 @@ public:
 	 *************************************************/
 	bool SetNTP(int ID, char *ntp_ip, unsigned int port, bool enable);
 
+	/************************************************
+	 * @functionName:  SetPTP
+	 * @date:          2026-06-26
+	 * @description:   CN:设置雷达ptp  EN:set lidar ptp
+	 * @Parameter:		1.ID [int,IN]  CN: 雷达ID  EN:Lidar ID
+	 *					4.enable[bool,IN]   CN：使能  EN:enable
+	 * @return:        true/false
+	 * @others:        Repeatable, different from ID
+	 *************************************************/
+	bool SetPTP(int ID, bool enable);
 
 	/************************************************
 	 * @functionName:  SetRES
@@ -266,7 +276,6 @@ public:
 	 * @others:        Repeatable, different from ID
 	 *************************************************/
 	bool SetRES(int ID, unsigned int res);
-
 
 	/************************************************
 	 * @functionName:  getLidarsList

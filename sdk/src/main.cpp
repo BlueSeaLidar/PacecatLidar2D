@@ -244,7 +244,10 @@ int main(int argc, char **argv)
 		// printf("tfx:%d post:%d num:%d\n",ret,ret2,ret3);
 
 		//设置雷达的NTP上传信息
-		// lidarSDK->SetNTP(lidarID,"192.168.0.111",133,1);
+		//lidarSDK->SetNTP(lidarID,"192.168.0.111",5678,1);
+
+		//设置雷达PTP
+		//lidarSDK->SetPTP(lidarID, 1);
 
 		//设置雷达数据录制功能
 		//参数1：是否启用录制

@@ -9,6 +9,7 @@
 #include <ros/console.h>
 #include <time.h>
 #include "../sdk/include/pacecat.h"
+#include "../sdk/include/global.h"
 PaceCatLidarDriver *m_driver = NULL;
 void PublishLaserScanFan(ros::Publisher &laser_pub, RawData *fan, std::string &frame_id, double min_dist, double max_dist, uint8_t inverted, uint8_t reversed)
 {
@@ -337,6 +338,32 @@ bool control_motor(pacecat::Control::Request &req, pacecat::Control::Response &r
 		cmd = tmp;
 		proto = 0x0053;
 	}
+	else if (req.func == "record")
+	{
+		if (req.params == "start")
+		{
+			g_uart_record_enabled = 1;
+			res.code = 1;
+			res.value = "UART recording started, saving to /tmp/uart_record_YYYYMMDD_HHMMSS.bin";
+		}
+		else if (req.params == "stop")
+		{
+			g_uart_record_enabled = 0;
+			res.code = 1;
+			res.value = "UART recording stopped";
+		}
+		else
+		{
+			res.code = -1;
+			res.value = "usage: record start/stop";
+		}
+		return true;
+	}
+	else if (req.func == "urer")
+	{
+		cmd = "LURERH";
+		proto = 0x0043;
+	}
 	else
 	{
 		ROS_ERROR("unknown action:%s", req.func.c_str());
@@ -512,6 +539,9 @@ bool ProfileInit(ros::NodeHandle priv_nh, ArgData &argdata)
 	priv_nh.param("ntp_ip", argdata.ntp_ip, std::string("192.168.158.50"));	   
 	priv_nh.param("ntp_port", argdata.ntp_port, -1); 
 	priv_nh.param("ntp_enable", argdata.ntp_enable, -1);
+
+	//ptp
+	priv_nh.param("ptp_enable", argdata.ptp_enable, -1);
 
 	//log
 	priv_nh.param("log_enable", argdata.log_enable, false);

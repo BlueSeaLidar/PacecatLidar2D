@@ -547,7 +547,7 @@ int ParseAPI::parse_data_x(unsigned int len, unsigned char* buf,UartState *uarts
 	UNUSED(span);
 	UNUSED(pack_format);
 
-    while (idx < len - 12)
+    while (idx + 12 <= len)
 	{
         //qDebug()<<hex<<buf[idx]<<buf[idx+1]<<(unsigned char)buf[idx+2]<<(unsigned char)buf[idx+3]<<endl;
         //LMSG
@@ -748,7 +748,7 @@ int ParseAPI::parse_data(unsigned int len, unsigned char* buf,UartState *uartsta
     int span=360;
 	UNUSED(span);
 	UNUSED(pack_format);
-	while (idx < len - 180)
+	while (idx + 180 <= len)
 	{
 		if (buf[idx] == 'S' && buf[idx + 1] == 'T' && buf[idx + 6] == 'E' && buf[idx + 7] == 'D')
 		{
@@ -1092,13 +1092,13 @@ bool uart_talk(int fd, int n, const char* cmd,
 	int nfetch, char* fetch)
 {
 	printf("send command : %s\n", cmd);
-	write(fd, cmd, n);
+	SystemAPI::Write(fd, cmd, n);
 
 	char buf[2048];
-	int nr = read(fd, buf, sizeof(buf));
+	int nr = SystemAPI::Read(fd, buf, sizeof(buf));
 	while (nr < (int)sizeof(buf))
 	{
-		int n = read(fd, buf + nr, sizeof(buf) - nr);
+		int n = SystemAPI::Read(fd, buf + nr, sizeof(buf) - nr);
 		if (n > 0)
 			nr += n;
 	}
@@ -1164,17 +1164,17 @@ bool vpc_talk(int hcom, int mode, short sn, int len, const char* cmd, int nfetch
 	//pcrc[0] = BaseAPI::stm32crc((unsigned int*)(buffer + 0), len / 4 + 2);
 
 	int len2 = len + sizeof(CmdHeader) + 4;
-	int nr = write(hcom, buffer, len2);
+	int nr = SystemAPI::Write(hcom, buffer, len2);
 	char buf[2048];
 	int index = 10;
 	//4C 48 BC FF   xx xx xx xx  result
 	//读取之后的10*2048个长度，如果不存在即判定失败
 	while (index--)
 	{
-		nr = read(hcom, buf, sizeof(buf));
+		nr = SystemAPI::Read(hcom, buf, sizeof(buf));
 		while (nr < (int)sizeof(buf))
 		{
-			int n = read(hcom, buf + nr, sizeof(buf) - nr);
+			int n = SystemAPI::Read(hcom, buf + nr, sizeof(buf) - nr);
 			if (n > 0) nr += n;
 		}
 
@@ -1241,7 +1241,7 @@ void send_cmd_vpc(int hCom, int mode, int sn, int len, const char* cmd)
 	//pcrc[0] =BaseAPI::stm32crc((unsigned int*)(buffer + 0), len / 4 + 2);
 
 	int len2 = len + sizeof(CmdHeader) + 4;
-	write(hCom, buffer, len2);
+	SystemAPI::Write(hCom, buffer, len2);
 }
 
 #ifdef _WIN32
@@ -1314,13 +1314,13 @@ int GetDevInfoByUART(const char* port_str, int speed)
 	}
 
 	char cmd[] = "LUUIDH";
-	write(hPort, cmd, sizeof(cmd));
+	SystemAPI::Write(hPort, cmd, sizeof(cmd));
 	int bOK = false;
 	unsigned char* buf = new unsigned char[check_size];
 	unsigned long  rf = 0;
 	while (rf < check_size)
 	{
-		int  tmp = read(hPort, buf + rf, check_size - rf);
+		int  tmp = SystemAPI::Read(hPort, buf + rf, check_size - rf);
 		if (tmp > 0)
 		{
 			rf += tmp;
@@ -1375,7 +1375,7 @@ int GetDevInfoByVPC(const char* port_str, int speed)
 	//遍历返回的信息中是否含有MCU VERSION:
 	while (rf < check_size)
 	{
-		int  tmp = read(hPort, buf + rf, check_size - rf);
+		int  tmp = SystemAPI::Read(hPort, buf + rf, check_size - rf);
 		if (tmp > 0)
 		{
 			rf += tmp;
@@ -1417,6 +1417,34 @@ int SystemAPI::open_serial_port(const char* name, int speed)
 	return Open_serial_port(name, speed);
 }
 
+int SystemAPI::Read(int __fd, void* __buf, int __nbytes)
+{
+#ifdef _WIN32
+	DWORD nr;
+	bool ret = ReadFile((HANDLE)__fd, __buf, __nbytes, &nr, NULL);
+	if (ret == false)
+		return -1;
+	return nr;
+#elif __linux
+	errno = 0;
+	int ret = read(__fd, __buf, __nbytes);
+	if (ret == -1 && errno == EAGAIN)   //重试
+		return 0;
+	return ret;
+#endif
+}
+int SystemAPI::Write(int __fd, const void* __buf, int __n)
+{
+#ifdef _WIN32
+	DWORD nr = 0;
+	WriteFile((HANDLE)__fd, __buf, __n, &nr, NULL);
+	FlushFileBuffers((HANDLE)__fd);
+	return nr;
+#elif __linux
+	return write(__fd, __buf, __n);
+#endif
+}
+
 int SystemAPI::open_socket_port(int localhost)
 {
 #ifdef _WIN32
@@ -1447,6 +1475,8 @@ int SystemAPI::open_socket_port(int localhost)
 
 int SystemAPI::closefd(int __fd, bool isSocket)
 {
+	if (__fd <= 0)
+		return 0;
 #ifdef _WIN32
 	if (!isSocket)
 		CloseHandle((HANDLE)__fd);
@@ -1525,21 +1555,6 @@ std::vector<std::string> SystemAPI::GetComPort()
 }
 
 #ifdef _WIN32
-int read(int __fd, void* __buf, int __nbytes)
-{
-	DWORD nr;
-	bool ret = ReadFile((HANDLE)__fd, __buf, __nbytes, &nr, NULL);
-	if (ret == false)
-		return -1;
-	return nr;
-}
-int write(int __fd, const void* __buf, int __n)
-{
-	DWORD nr = 0;
-	WriteFile((HANDLE)__fd, __buf, __n, &nr, NULL);
-	return nr;
-}
-
 int Open_serial_port(const char* name, int port)
 {
 	char path[32];
@@ -1556,6 +1571,8 @@ int Open_serial_port(const char* name, int port)
 	if (hPort == NULL || hPort == INVALID_HANDLE_VALUE)
 	{
 		// MessageBox(0, "can not open port", name, MB_OK);
+		//DWORD err = GetLastError();
+		//printf("CreateFile failed for %s, error code: %lu\n", path, err);
 		return 0;
 	}
 	DCB PortDCB;
@@ -1591,6 +1608,8 @@ int Open_serial_port(const char* name, int port)
 	if (!SetCommState(hPort, &PortDCB))
 	{
 		// MessageBox(0, "Unable to configure the serial port", "error", MB_OK);
+		//DWORD err = GetLastError();
+		//printf("SetCommState failed for %s, error code: %lu\n", path, err);
 		CloseHandle(hPort);
 		return NULL;
 	}
@@ -1612,6 +1631,8 @@ int Open_serial_port(const char* name, int port)
 	{
 		// Could not set the timeout parameters.
 		// MessageBox(0, "Unable to set the timeout parameters", "error", MB_OK);
+		//DWORD err = GetLastError();
+		//printf("SetCommTimeouts failed for %s, error code: %lu\n", path, err);
 		CloseHandle(hPort);
 		return NULL;
 	}
@@ -1709,6 +1730,12 @@ int Open_serial_port(const char* port, int baud_rate)
 
 	return fd;
 }
+uint64_t GetMonotonicNs()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
 #endif // _WIN32
 
 
@@ -1729,20 +1756,20 @@ void CommunicationAPI::send_cmd_vpc(int hCom, int mode, int sn, int len, const c
 	//pcrc[0] =BaseAPI::stm32crc((unsigned int*)(buffer + 0), len / 4 + 2);
 
 	int len2 = len + sizeof(CmdHeader) + 4;
-	write(hCom, buffer, len2);
+	SystemAPI::Write(hCom, buffer, len2);
 }
 
 bool CommunicationAPI::uart_talk(int fd, int n, const char* cmd, int nhdr, const char* hdr_str, int nfetch, char* fetch, int waittime)
 {
 	printf("send command : %s\n", cmd);
-    write(fd, cmd, n);
+    SystemAPI::Write(fd, cmd, n);
 
 	char buf[4096];
 	uint64_t start_ms = SystemAPI::GetTimeStampNow();
-	int nr = read(fd, buf, sizeof(buf));
+	int nr = SystemAPI::Read(fd, buf, sizeof(buf));
 	while (nr < (int)sizeof(buf))
 	{
-		int n = read(fd, buf + nr, sizeof(buf) - nr);
+		int n = SystemAPI::Read(fd, buf + nr, sizeof(buf) - nr);
 		if (n > 0)
 		{
 			nr += n;
@@ -1840,17 +1867,17 @@ bool CommunicationAPI::vpc_talk(int hcom, int mode, short sn, int len, const cha
 	//pcrc[0] = BaseAPI::stm32crc((unsigned int*)(buffer + 0), len / 4 + 2);
 
 	int len2 = len + sizeof(CmdHeader) + 4;
-	int nr = write(hcom, buffer, len2);
+	int nr = SystemAPI::Write(hcom, buffer, len2);
 	char buf[2048];
 	int index = 10;
 	//4C 48 BC FF   xx xx xx xx  result
 	//读取之后的10*2048个长度，如果不存在即判定失败
 	while (index--)
 	{
-		nr = read(hcom, buf, sizeof(buf));
+		nr = SystemAPI::Read(hcom, buf, sizeof(buf));
 		while (nr < (int)sizeof(buf))
 		{
-			int n = read(hcom, buf + nr, sizeof(buf) - nr);
+			int n = SystemAPI::Read(hcom, buf + nr, sizeof(buf) - nr);
 			if (n > 0) nr += n;
 		}
 

@@ -11,7 +11,8 @@ int main(int argc, char **argv)
     ROS_INFO("usage: rosrun pacecat  pacecat_client scan start                          arg1 is topic   arg2 is action(start/stop)");
     ROS_INFO("usage: rosrun pacecat  pacecat_client scan switchZone  0                  arg1 is topic   arg2 is action(switchZone)  arg3 is select zone id");
     ROS_INFO("usage: rosrun pacecat  pacecat_client scan rpm  600                       arg1 is topic   arg2 is action(set rpm)  arg3 is rpm value");
-    ROS_INFO("usage: rosrun pacecat  pacecat_client heart check  1                      arg1 is service name   arg2 is action(check)  arg3 is print / not print");
+    ROS_INFO("usage: rosrun pacecat  pacecat_client scan record start/stop              arg1 is topic   arg2 is action(record)  arg3 is start/stop");
+    ROS_INFO("usage: rosrun pacecat  pacecat_client scan urer                           arg1 is topic   arg2 is action(urer) - query encoder error");
     return 1;
   }
 
@@ -42,13 +43,12 @@ int main(int argc, char **argv)
     srv.request.params=argv[3];
     
   }
-  else if(strcmp(argv[2],"check")==0)
+  else if(strcmp(argv[2],"record")==0)
   {
-    // char tmpcmd[64] = {0};
-    // sprintf(tmpcmd,"/%s_motor",argv[2]);
-    // client = n.serviceClient<pacecat::Control>(tmpcmd);
-
-    srv.request.flag=atoi(argv[3]);
+    srv.request.params=argv[3];
+  }
+  else if(strcmp(argv[2],"urer")==0)
+  {
   }
   result = client.call(srv);
   if (result)

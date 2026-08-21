@@ -257,8 +257,7 @@ struct CommandList
 	char direction[12];
 	char ats[12];
 	char ntp[64];
-
-
+	char ptp[12];
 };
 struct Parser
 {
@@ -355,6 +354,7 @@ struct UartInfo
 	
 	bool hasdata;
 	uint32_t nodata_count;
+	bool client_cmd_pause;
 
 	Parser* hParser;
 	PubHub* hPublish;
@@ -371,6 +371,7 @@ struct UDPInfo
 	int listen_port;
 	bool is_group_listener;
 	pthread_t thr;
+	bool client_cmd_pause;
 };
 
 struct ScriptParam
@@ -465,6 +466,7 @@ struct ArgData
 	std::string ntp_ip;
 	int ntp_port;
 	int ntp_enable;
+	int ptp_enable;
 	bool log_enable;
 	std::string log_path;
 	Fitter fitter;

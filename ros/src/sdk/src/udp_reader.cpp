@@ -1,5 +1,6 @@
 #include "../include/alarm.h"
 #include "../include/reader.h"
+extern int g_timemode;
 
 void send_cmd_udp(int fd_udp, const char *dev_ip, int dev_port, int cmd, int sn, int len, const void *snd_buf)
 {
@@ -166,17 +167,31 @@ void *UdpThreadProc(void *p)
 			info->lidars[i].nodata_count = 0;
 		}
 	}
+
+	// Log time time sync state(timemode, ntp, ptp, keepalive)
+	for (int i = 0; i < info->nnode; i++)
+	{
+		Parser *parser = (Parser *)info->lidars[i].hParser;
+		bool keepalive = g_timemode == 1 && (strlen(parser->cmd.ntp) <= 0 || parser->cmd.ntp[6] != '1') && (strlen(parser->cmd.ptp) <= 0 || parser->cmd.ptp[6] != '1');
+		DEBUG("idx:%d, timemode:%d, ntp:%s, ptp:%s, keepalive:%d", i, g_timemode, parser->cmd.ntp, parser->cmd.ptp, keepalive);
+	}
 	
 	while (1)
 	{
+		if (info->client_cmd_pause)
+		{
+			usleep(50000);
+			continue;
+		}
+
 		gettimeofday(&tv, NULL);
 		if (tv.tv_sec > tto && !info->is_group_listener)
 		{
 			for (int i = 0; i < info->nnode; i++)
 			{
 				Parser *parser = (Parser *)info->lidars[i].hParser;
-				int cmdLength = strlen(parser->cmd.ntp);
-				if (cmdLength <= 0)
+				bool keepalive = g_timemode == 1 && (strlen(parser->cmd.ntp) <= 0 || parser->cmd.ntp[6] != '1') && (strlen(parser->cmd.ptp) <= 0 || parser->cmd.ptp[6] != '1');
+				if (keepalive)
 				{
 					KeepAlive alive;
 					gettimeofday(&tv, NULL);
@@ -220,6 +235,12 @@ void *UdpThreadProc(void *p)
 		// read UDP data
 		if (FD_ISSET(fd_udp, &fds))
 		{
+			if (info->client_cmd_pause)
+			{
+				usleep(50000);
+				continue;
+			}
+
 			sockaddr_in addr;
 			socklen_t sz = sizeof(addr);
 
@@ -353,10 +374,46 @@ bool SendUdpCmd(HReader hr, std::string lidarIp, int port, std::string cmd, int 
 	{
 		if (lidarIp == info->lidars[i].ip && port == info->lidars[i].port)
 		{
-			send_cmd_udp(info->fd_udp, info->lidars[i].ip, info->lidars[i].port, proto, rand(), cmd.size(), cmd.c_str());
-			return true;
+			info->client_cmd_pause = true;
+
+			bool ret = false;
+			if (cmd == "LURERH")
+			{
+				char buf[128] = {0};
+				ret = udp_talk_C_PACK(info->fd_udp, info->lidars[i].ip, info->lidars[i].port,
+					6, "LURERH", 2, "E:", 100, buf);
+				if (ret)
+				{
+					timeval tv;
+					gettimeofday(&tv, NULL);
+					tm t;
+					localtime_r(&tv.tv_sec, &t);
+					DEBUG("URER UDP %s:%d [%04d-%02d-%02d %02d:%02d:%02d.%03d]:\nE:%s",
+						info->lidars[i].ip, info->lidars[i].port,
+						t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+						t.tm_hour, t.tm_min, t.tm_sec, (int)(tv.tv_usec / 1000), buf);
+				}
+			}
+			else if (proto == 0x0043)
+			{
+				ret = udp_talk_C_PACK(info->fd_udp, info->lidars[i].ip, info->lidars[i].port,
+					cmd.size(), cmd.c_str(), 2, "OK", 0, NULL);
+			}
+			else
+			{
+				char result[2] = {0};
+				ret = udp_talk_S_PACK(info->fd_udp, info->lidars[i].ip, info->lidars[i].port,
+					cmd.size(), cmd.c_str(), result);
+				if (ret)
+					ret = (result[0] == 'O' && result[1] == 'K');
+			}
+
+			info->client_cmd_pause = false;
+			DEBUG("UDP send cmd %s %s", cmd.c_str(), ret ? "OK" : "NG");
+			return ret;
 		}
 	}
+	DEBUG("UDP send cmd %s lidar not found", cmd.c_str());
 	return false;
 }
 
@@ -560,9 +617,19 @@ bool setup_lidar_udp(int handle, Parser *hP, EEpromV101 &param)
 			DEBUG("set ntp %s", result);
 			if (result[0] == 'O' && result[1] == 'K' && parser->cmd.ntp[6] == '1')
 				timestampMode(1);
-			else
-				timestampMode(0);
-
+			break;
+		}
+	}
+	for (unsigned int i = 0; i < index; i++)
+	{
+		cmdLength = strlen(parser->cmd.ptp);
+		if (cmdLength <= 0)
+			break;
+		if (udp_talk_S_PACK(handle, parser->ip, parser->port, cmdLength, parser->cmd.ptp, result))
+		{
+			DEBUG("set ptp %s", result);
+			if (result[0] == 'O' && result[1] == 'K' && parser->cmd.ptp[6] == '1')
+				timestampMode(1);
 			break;
 		}
 	}

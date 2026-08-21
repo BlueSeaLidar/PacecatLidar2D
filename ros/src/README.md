@@ -32,7 +32,6 @@ explain：[launch file] refers to the configuration files in the src/launch fold
 	- vpc_lidar.launch:                 lidar with virtual serial port connection method
 	- dual_udp_lidar.launch:            lidar with multiple UDP network communication(only one node)
 	- template.launch:                  All parameter definition templates
-	- heart_check.launch:               lidar uptime detection print
 	- LDS-U50C-S(only).launch:          Older lidars, data communication only
 	- LDS-U80C-S(only).launch:          Older lidars, data communication only
 	- multi_node_udp_lidar.launch:      lidar with multiple UDP network communication(in different node)
@@ -86,12 +85,15 @@ Main parameter configuration instructions：
     <param name="with_deshadow" value="-1" />#Set filtering, -1 not set 0 off 1 on
     <param name="alarm_msg" value="-1" />#set alarm message, -1 not set 0 off 1 on
     <param name="direction" value="-1"/>#Set direction of rotation(only used by lidar which support this command),-1 not set 0 off 1 on
+    #TIME_MODE#
+    <param name="time_mode" value="0"/>#Time synchronization enable parameter	0: No synchronization, use local system time (auto switches to 1 to enable if NTP/PTP configured), 1: Synchronize, use device timestamp (send commands per NTP/PTP configuration, send keepalive if neither enabled (local system time synchronization))
     #NTP#
     <param name="ntp_ip" value="192.168.0.111" /># NTP service ip
     <param name="ntp_port" value="5678" />#NTP service port
     <param name="ntp_enable" value="1"/># enable or not
-
-
+    #PTP#
+    <param name="ptp_enable" value="1"/># enable or not
+	
 ## Driver Client Functional Description
 source code locate at src/client.cpp
 start/stop rotate：
@@ -108,6 +110,18 @@ set rpm：
 
 	rosrun pacecat  pacecat_client scan rpm  600 
     arg1 is topic   arg2 is action(set rpm)  arg3 is rpm value
+
+record UART raw data：
+
+	rosrun pacecat  pacecat_client scan record start
+    arg1 is topic   arg2 is action(record)  arg3 is start / stop
+
+Recorded files are saved to /tmp/uart_record_datetime.bin. Each start creates a new file without overwriting previous ones. Useful for debugging UART data parsing issues.
+
+query encoder error：
+
+	rosrun pacecat  pacecat_client scan urer
+    arg1 is topic   arg2 is action(urer) - query encoder error
 
 ## rosbag bag operating instructions
 

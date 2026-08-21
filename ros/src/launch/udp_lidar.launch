@@ -38,10 +38,14 @@
     <param name="alarm_msg" value="-1"/>
     <param name="ats" value="-1"/>
     <param name="direction" value="-1"/>#-1 0 1
+    #TIME_MODE#
+    <param name="time_mode" value="0"/>
     #NTP#
     <param name="ntp_ip" value="192.168.0.111" />
     <param name="ntp_port" value="5678" />
     <param name="ntp_enable" value="-1"/>
+    #PTP#
+    <param name="ptp_enable" value="-1"/>
   </node>
  </group>
 </launch>

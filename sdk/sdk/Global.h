@@ -73,7 +73,11 @@ namespace SystemAPI {
     int GetComList(std::vector<UARTARG>& list);
     int closefd(int __fd, bool isSocket);
     std::vector<std::string> GetComPort();
+	//串口
     int open_serial_port(const char* name, int speed);
+	int Read(int __fd, void* __buf, int __nbytes);
+	int Write(int __fd, const void* __buf, int __n);
+	//udp
     int open_socket_port(int localhost);
 	//得当前时间戳(ms)
 	uint64_t GetTimeStampNow();
@@ -109,11 +113,11 @@ unsigned int stm32crc(unsigned int* ptr, unsigned int len);
 
 #ifdef _WIN32
     int Open_serial_port(const char* name, int port);
-    int read(int __fd, void* __buf, int __nbytes);
-    int write(int __fd, const void* __buf, int __n);
 #elif __linux__
     extern "C"  int change_baud(int fd, int baud);
     int Open_serial_port(const char* name, int port);
+	// 测试性能用 纳秒
+	uint64_t GetMonotonicNs();
 #endif
 
 bool judgepcIPAddrIsValid(const char* pcIPAddr);

@@ -130,6 +130,21 @@ bool setup_lidar_udp(int fd_udp, RunScript *arg)
 		}
 	}
 
+	if (arg->ptp_enable >= 0)
+	{
+		char cmd[16];
+		sprintf(cmd, "LSPTP:%dH", arg->ptp_enable);
+
+		if (CommunicationAPI::udp_talk_S_PACK(fd_udp, arg->connectArg, arg->connectArg2, strlen(cmd), cmd, result))
+		{
+			printf("set LiDAR ptp %s\n", result);
+		}
+		else
+		{
+			printf("set LiDAR ptp NG\n");
+		}
+	}
+
 	if (arg->resample_res > 0)
 	{
 		// resample == 0  非固定角分辨率不适用于网络包计算
@@ -249,93 +264,139 @@ void *lidar_thread_proc_uart(void *param)
 	struct timeval start_tv;
 	gettimeofday(&start_tv, NULL);
 
-	bool is_uart_exist = true;
 	uint64_t last_rx_ms = SystemAPI::GetTimeStampNow() + 1000;
+
 	bool has_vaild_data = false;
 	int no_vaild_data_count = 0;
 
+	bool is_uart_exist = true;
+
 	while (cfg->state != STOP_ALL)
 	{
-		if (!SystemAPI::uart_exist(cfg->runscript.connectArg)) //串口无法识别
-		{
-			is_uart_exist = false;
-			printf("uart %s not found\n", cfg->runscript.connectArg);
-			sleep(2);
-			continue;
-		}
+		uint64_t now_ms = SystemAPI::GetTimeStampNow();
 
-		if (!is_uart_exist)	//串口重连
-		{
-			int fd = SystemAPI::open_serial_port(cfg->runscript.connectArg, cfg->runscript.connectArg2);
-			if (fd <= 0)
-			{
-				printf("uart %s open failed\n", cfg->runscript.connectArg);
-				sleep(2);
-				continue;
-			}
-			cfg->fd = fd;
-			is_uart_exist = true;
-			printf("uart %s is reconnected\n", cfg->runscript.connectArg);
-		}
-
-		uint64_t now_ms = SystemAPI::GetTimeStampNow();	//有效数据识别
+		// 有效数据识别
 		if (int(now_ms - last_rx_ms) >= 1000)
 		{
 			if (has_vaild_data == true)
+			{
 				has_vaild_data = false;
+				//printf("has_vaild_data\n");
+			}
 			else
 			{
 				no_vaild_data_count++;
 				printf("uart no valid data, count:%d, %s\n", no_vaild_data_count, SystemAPI::GetTimeYMDHMSms().c_str());
 
-				//查询雷达信息		
-				if (strcmp(cfg->runscript.type, "uart") == 0)
+				if (!SystemAPI::uart_exist(cfg->runscript.connectArg)) //串口无法识别
 				{
-					char buf[20] = { 0 };
-					if (CommunicationAPI::uart_talk(cfg->fd, 6, "LUUIDH", 11, "PRODUCT SN:", 16, buf))
-						printf("uart no valid data, get LiDAR uuid info:%s\n", buf);
-					else
-						printf("uart no valid data, get LiDAR uuid failed\n");
+					is_uart_exist = false;
+					has_vaild_data = false;
+					printf("uart %s not found\n", cfg->runscript.connectArg);
+					//关闭句柄
+					if (cfg->fd > 0) {
+						printf("close fd:%d\n", cfg->fd);
+						SystemAPI::closefd(cfg->fd, false);
+						cfg->fd = -1;
+					}
+					//test linux
+					// strcpy(cfg->runscript.connectArg, "/dev/ttyUSB1");
+					sleep(1);
+					continue;
 				}
-				else if (strcmp(cfg->runscript.type, "vpc") == 0)
+				else
 				{
-					if (!CommunicationAPI::vpc_talk(cfg->fd, 0x4753, rand(), 6, "LUUIDH", sizeof(EEpromV101), &cfg->eepromv101))
-						printf("uart no valid data, vpc GetDevInfo_MSG failed\n");
-					else
-						printf("uart no valid data, vpc GetDevInfo_MSG sn:%s\n", cfg->eepromv101.dev_sn);
+					//串口能被识别
+					printf("uart_exist %s\n", cfg->runscript.connectArg);
+					
+					//之前断连 尝试重连
+					if (is_uart_exist == false) {
+						int fd = SystemAPI::open_serial_port(cfg->runscript.connectArg, cfg->runscript.connectArg2);
+						if (fd <= 0){
+							//重连失败
+							printf("uart %s open failed\n", cfg->runscript.connectArg);
+							sleep(1);
+							continue;
+						}
+						else{
+							//重连成功
+							cfg->fd = fd;
+							printf("uart %s is reconnected, fd:%d\n", cfg->runscript.connectArg, cfg->fd);
+
+							//if (strcmp(cfg->runscript.type, "uart") == 0)
+							//	setup_lidar_uart(cfg->fd, &cfg->runscript, &cfg->eepromv101, cfg->hardwareVersion);
+							//else
+							//	setup_lidar_vpc(cfg->fd, &cfg->runscript);
+
+							last_rx_ms = SystemAPI::GetTimeStampNow() + 1000;				
+							has_vaild_data = false;
+							no_vaild_data_count = 0;
+							is_uart_exist = true;
+
+							buf_len = 0;
+
+							continue;
+						}
+					}
+
+					if (is_uart_exist == true) {
+						//查询雷达信息		
+						if (strcmp(cfg->runscript.type, "uart") == 0)
+						{
+							char buf[20] = { 0 };
+							if (CommunicationAPI::uart_talk(cfg->fd, 6, "LUUIDH", 11, "PRODUCT SN:", 16, buf))
+								printf("uart no valid data, get LiDAR uuid info:%s\n", buf);
+							else
+								printf("uart no valid data, get LiDAR uuid failed\n");
+						}
+						else if (strcmp(cfg->runscript.type, "vpc") == 0)
+						{
+							if (!CommunicationAPI::vpc_talk(cfg->fd, 0x4753, rand(), 6, "LUUIDH", sizeof(EEpromV101), &cfg->eepromv101))
+								printf("uart no valid data, vpc GetDevInfo_MSG failed\n");
+							else
+								printf("uart no valid data, vpc GetDevInfo_MSG sn:%s\n", cfg->eepromv101.dev_sn);
+						}
+					}
 				}
 			}
 			last_rx_ms = now_ms;
 		}
 
 #ifdef _WIN32
-		if (cfg->fd > 0)
+		if (cfg->fd > 0) 
 #elif __linux
 		fd_set fds;
 		FD_ZERO(&fds);
-		FD_SET(cfg->fd, &fds);
-		struct timeval to = {1, 1};
-		ret = select(cfg->fd + 1, &fds, NULL, NULL, &to);
-		if (ret < 0)
-		{
-			printf("select error\n");
-			return NULL;
+		if (cfg->fd > 0) {
+			FD_SET(cfg->fd, &fds);
+			struct timeval to = { 1, 0 };
+			ret = select(cfg->fd + 1, &fds, NULL, NULL, &to);
+			if (ret < 0)
+			{
+				printf("select error\n");
+				//return NULL;
+				sleep(1);
+				continue;
+			}
 		}
 		if (cfg->fd > 0 && FD_ISSET(cfg->fd, &fds))
-#endif // _WIN32
+#endif
 		{
-			int nr = read(cfg->fd, buf + buf_len, BUF_SIZE - buf_len);
+			int nr = SystemAPI::Read(cfg->fd, buf + buf_len, BUF_SIZE - buf_len); //理论上不会满
 			if (nr < 0)
 			{
 				sprintf(info, "read port %d error %d", buf_len, nr);
-				cfg->callback(cfg->context,9, info, strlen(info) + 1);
-				break;
+				cfg->callback(cfg->context, 9, info, strlen(info) + 1);
+				//break;
+				sleep(1);
+				continue;
 			}
-			if (nr == 0)
+			if (nr == 0)	//断连后超过一秒无数据自动进检查串口
 			{
 #ifdef _WIN32
 				msleep(10);
 #endif
+				// printf("read nr==0, %d\n", errno);
 				continue;
 			}
 			if (nr > 0)
@@ -559,7 +620,7 @@ void *lidar_thread_proc_uart(void *param)
 		{
 			if (strcmp(cfg->runscript.type, "uart") == 0)
 			{
-				write(cfg->fd, cfg->send_cmd, cfg->send_len);
+				SystemAPI::Write(cfg->fd, cfg->send_cmd, cfg->send_len);
 			}
 			else if (strcmp(cfg->runscript.type, "vpc") == 0)
 			{
@@ -672,7 +733,7 @@ int setup_lidar_vpc(int hCom, RunScript *arg)
 	for (int i = 0; i < 300 && nr <= 0; i++)
 	{
 		msleep(10);
-		nr = read(hCom, buf, sizeof(buf));
+		nr = SystemAPI::Read(hCom, buf, sizeof(buf));
 	}
 	if (nr <= 0)
 	{
@@ -745,17 +806,17 @@ int setup_lidar_uart(int fd_uart, RunScript *arg, EEpromV101 *eepromv101, char *
 
 	if (arg->with_start >= 0)
 	{
-		write(fd_uart, "LSTARH", 6);
+		SystemAPI::Write(fd_uart, "LSTARH", 6);
 	}
 	for (int i = 0; i < 300 && nr <= 0; i++)
 	{
 		msleep(10);
-		nr = read(fd_uart, buf, sizeof(buf));
+		nr = SystemAPI::Read(fd_uart, buf, sizeof(buf));
 	}
 	if (nr <= 0)
 	{
 		printf("serial port seem not working\n");
-		SystemAPI::closefd(fd_uart, false);
+		//SystemAPI::closefd(fd_uart, false);
 		return READ_UART_FAILED;
 	}
 	if (arg->uuid >= 0)
@@ -1334,6 +1395,8 @@ bool readConfig(const char *cfg_file_name, RunScript &cfg)
 			cfg.ntp_port = atoi(value.c_str());
 		else if (key == "ntp_enable")
 			cfg.ntp_enable = atoi(value.c_str());
+		else if (key == "ptp_enable")
+			cfg.ptp_enable = atoi(value.c_str());
 	}
 	if (cfg.error_scale == 0)
 		cfg.error_scale = 0.9;

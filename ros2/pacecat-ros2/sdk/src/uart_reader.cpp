@@ -1,5 +1,6 @@
 #include "../include/reader.h"
 #include "../include/global.h"
+#include <ctime>
 
 extern "C" int change_baud(int fd, unsigned int baud);
 
@@ -9,12 +10,12 @@ bool uart_talk(int fd, int n, const char *cmd, int nhdr, const char *hdr_str, in
 	write(fd, cmd, n);
 
 	char *buf = new char[CacheLength];
-	int nr = read(fd, buf, sizeof(buf));
+	int nr = SystemAPI::Read(fd, buf, CacheLength);
 	int idx = waittime;
 
 	while (nr < CacheLength)
 	{
-		int n = read(fd, buf + nr, CacheLength - nr);
+		int n = SystemAPI::Read(fd, buf + nr, CacheLength - nr);
 		// printf(" fd %d %d \n",n,nr);
 		if (n > 0)
 		{
@@ -40,7 +41,7 @@ bool uart_talk(int fd, int n, const char *cmd, int nhdr, const char *hdr_str, in
 		{
 			if (nfetch > 0)
 			{
-				if (strcmp(cmd, "LVERSH") == 0 || strcmp(cmd, "LUUIDH") == 0 || strcmp(cmd, "LTYPEH") == 0 || strcmp(cmd, "LQAZNH") == 0 || strcmp(cmd, "LQPSTH") == 0 || strcmp(cmd, "LQNPNH") == 0 || strcmp(cmd, "LQOUTH") == 0 || strcmp(cmd, "LQCIRH") == 0 || strcmp(cmd, "LQFIRH") == 0 || strcmp(cmd, "LQSRPMH") == 0 || strcmp(cmd, "LQSMTH") == 0 || strcmp(cmd, "LQDSWH") == 0 || strcmp(cmd, "LQZTPH") == 0 || strcmp(cmd, "LQSAFH") == 0 || strcmp(cmd, "LQZIRH") == 0)
+				if (strcmp(cmd, "LVERSH") == 0 || strcmp(cmd, "LUUIDH") == 0 || strcmp(cmd, "LTYPEH") == 0 || strcmp(cmd, "LQAZNH") == 0 || strcmp(cmd, "LQPSTH") == 0 || strcmp(cmd, "LQNPNH") == 0 || strcmp(cmd, "LQOUTH") == 0 || strcmp(cmd, "LQCIRH") == 0 || strcmp(cmd, "LQFIRH") == 0 || strcmp(cmd, "LQSRPMH") == 0 || strcmp(cmd, "LQSMTH") == 0 || strcmp(cmd, "LQDSWH") == 0 || strcmp(cmd, "LQZTPH") == 0 || strcmp(cmd, "LQSAFH") == 0 || strcmp(cmd, "LQZIRH") == 0 || strcmp(cmd, "LURERH") == 0)
 				{
 					memcpy(fetch, buf + i + nhdr, nfetch);
 					fetch[nfetch] = '\0';
@@ -123,10 +124,10 @@ bool vpc_talk(int hcom, int mode, short sn, int len, const char *cmd, int nfetch
 	// 读取之后的10*2048个长度，如果不存在即判定失败
 	while (index--)
 	{
-		nr = read(hcom, buf, sizeof(buf));
+		nr = SystemAPI::Read(hcom, buf, sizeof(buf));
 		while (nr < (int)sizeof(buf))
 		{
-			int n = read(hcom, buf + nr, sizeof(buf) - nr);
+			int n = SystemAPI::Read(hcom, buf + nr, sizeof(buf) - nr);
 			if (n > 0)
 				nr += n;
 		}
@@ -544,12 +545,28 @@ int UartReader(UartInfo *info)
 
 	while (1)
 	{
+		if (info->client_cmd_pause)
+		{
+			usleep(50000);
+			continue;
+		}
+
 		gettimeofday(&tv, NULL);
 		if (tv.tv_sec > tto)
 		{
+			if(access(info->port, F_OK))
+			{
+				DEBUG("uart %s not found\n", info->port);
+				//test
+				// strcpy(info->port, "/dev/ttyUSB1");
+				break;
+			}
+
 			tto = tv.tv_sec + 1;
 			if (info->hasdata == true)
+			{
 				info->hasdata = false;
+			}
 			else
 			{
 				info->nodata_count++;
@@ -584,7 +601,7 @@ int UartReader(UartInfo *info)
 		fd_set fds;
 		FD_ZERO(&fds);
 		FD_SET(fd_uart, &fds);
-		struct timeval to = {1, 500000};
+		struct timeval to = {1, 0};
 		int ret = select(fd_uart + 1, &fds, NULL, NULL, &to);
 		if (ret < 0)
 		{
@@ -597,13 +614,56 @@ int UartReader(UartInfo *info)
 		if (FD_ISSET(fd_uart, &fds))
 		{
 			unsigned char buf[512];
-			int nr = read(fd_uart, buf, sizeof(buf));
-			if (nr <= 0)
+			int nr = SystemAPI::Read(fd_uart, buf, sizeof(buf));
+			if (nr < 0)
 			{
-				//printf("read port error %d\n", nr);
+				// printf("read port error %d\n", nr);
 				ERROR((int)COM_READ_ERR, Error::GetErrorString(COM_READ_ERR).c_str());
 				break;
 			}
+			if (nr == 0)
+			{
+				// printf("read nr==0, %d\n", errno);
+				continue;
+			}
+
+			{// record UART data
+				static FILE *record_file = NULL;
+				static int last_record_state = 0;
+				static char record_filename[128] = {0};
+				if (g_uart_record_enabled != last_record_state)
+				{
+					if (g_uart_record_enabled)
+					{
+						time_t now = time(NULL);
+						struct tm tm_buf;
+						localtime_r(&now, &tm_buf);
+						snprintf(record_filename, sizeof(record_filename),
+							"/tmp/uart_record_%04d%02d%02d_%02d%02d%02d.bin",
+							tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
+							tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
+						record_file = fopen(record_filename, "wb");
+						if (record_file)
+							DEBUG("UART recording started, saving to %s", record_filename);
+					}
+					else
+					{
+						if (record_file)
+						{
+							fclose(record_file);
+							record_file = NULL;
+							DEBUG("UART recording stopped");
+						}
+					}
+					last_record_state = g_uart_record_enabled;
+				}
+				if (g_uart_record_enabled && record_file)
+				{
+					fwrite(buf, 1, nr, record_file);
+					fflush(record_file);
+				}
+			}
+
 			int nfan = ParserRunStream(info->hParser, nr, buf, &(fans[0]));
 			if (nfan > 0)
 			{
@@ -611,8 +671,8 @@ int UartReader(UartInfo *info)
 				info->hasdata = true;
 				info->nodata_count = 0;
 			}
-			if (nr < sizeof(buf) - 10)
-				usleep(10000 - nr * 10);
+			// if (nr < sizeof(buf) - 10)
+			// 	usleep(10000 - nr * 10);
 		}
 	}
 	return 0;
@@ -663,6 +723,7 @@ void *UartThreadProc(void *p)
 void *StartUartReader(const char *type, const char *port, int baudrate, Parser *hParser, PubHub *hPublish)
 {
 	UartInfo *info = new UartInfo;
+	info->client_cmd_pause = false;
 	strcpy(info->type, type);
 	strcpy(info->port, port);
 	info->baudrate = baudrate;
@@ -676,38 +737,90 @@ void *StartUartReader(const char *type, const char *port, int baudrate, Parser *
 bool SendUartCmd(HReader hr, int len, char *cmd)
 {
 	UartInfo *info = (UartInfo *)hr;
+	if (!info || info->fd_uart <= 0)
+		return false;
 
-	if (info && info->fd_uart > 0)
-		write(info->fd_uart, cmd, len);
-	return true;
+	bool ret = false;
+	info->client_cmd_pause = true;
+	for (unsigned int i = 0; i < 5; i++)
+	{
+		tcflush(info->fd_uart, TCIFLUSH);
+		if (strcmp(cmd, "LURERH") == 0)
+		{
+			char buf[128] = {0};
+			if (uart_talk(info->fd_uart, 6, "LURERH", 6, "Head: ", 100, buf))
+			{
+				if (strstr(buf, "LURERH OK"))
+				{
+					timeval tv;
+					gettimeofday(&tv, NULL);
+					tm t;
+					localtime_r(&tv.tv_sec, &t);
+					DEBUG("URER UART [%04d-%02d-%02d %02d:%02d:%02d.%03d]:\nHead: %s",
+						t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+						t.tm_hour, t.tm_min, t.tm_sec, (int)(tv.tv_usec / 1000), buf);
+					ret = true;
+					break;
+				}
+			}
+		}
+		else
+		{
+			int wt = (strcmp(cmd, "LSTARH") == 0) ? 500 : 10;
+			if (uart_talk(info->fd_uart, len, cmd, 2, "OK", 0, NULL, wt))
+			{
+				ret = true;
+				break;
+			}
+		}
+	}
+	info->client_cmd_pause = false;
+	DEBUG("UART send cmd %s %s", cmd, ret ? "OK" : "NG");
+	return ret;
 }
 
 bool SendVpcCmd(HReader hr, int len, char *cmd)
 {
 	UartInfo *info = (UartInfo *)hr;
-	if (info && info->fd_uart > 0)
+	if (!info || info->fd_uart <= 0)
+		return false;
+
+	bool ret = false;
+	info->client_cmd_pause = true;
+	for (unsigned int i = 0; i < 5; i++)
 	{
-		int fd = info->fd_uart;
-
-		unsigned char buffer[2048];
-		CmdHeader *hdr = (CmdHeader *)buffer;
-		hdr->sign = 0x484c;
-		hdr->cmd = 0x0043;
-		hdr->sn = rand();
-
-		len = ((len + 3) >> 2) * 4;
-
-		hdr->len = len;
-
-		memcpy(buffer + sizeof(CmdHeader), cmd, len);
-
-		// int n = sizeof(CmdHeader);
-		unsigned int *pcrc = (unsigned int *)(buffer + sizeof(CmdHeader) + len);
-		pcrc[0] = stm32crc((unsigned int *)(buffer + 0), len / 4 + 2);
-		int len2 = len + sizeof(CmdHeader) + 4;
-		write(fd, buffer, len2);
+		tcflush(info->fd_uart, TCIFLUSH);
+		char buf[128] = {0};
+		if (strcmp(cmd, "LURERH") == 0)
+		{
+			if (vpc_talk(info->fd_uart, 0x0043, rand(), 6, "LURERH", 100, buf))
+			{
+				if (buf[0] != 0)
+				{
+					timeval tv;
+					gettimeofday(&tv, NULL);
+					tm t;
+					localtime_r(&tv.tv_sec, &t);
+					DEBUG("URER VPC [%04d-%02d-%02d %02d:%02d:%02d.%03d]:\n%s",
+						t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+						t.tm_hour, t.tm_min, t.tm_sec, (int)(tv.tv_usec / 1000), buf);
+					ret = true;
+					break;
+				}
+			}
+		}
+		else if (vpc_talk(info->fd_uart, 0x0043, rand(), len, cmd, 100, buf))
+		{
+			if (strstr(buf, "OK"))
+			{
+				ret = true;
+				break;
+			}
+		}
 	}
-	return true;
+	info->client_cmd_pause = false;
+	DEBUG("VPC send cmd %s %s", cmd, ret ? "OK" : "NG");
+	return ret;
 }
 
 void StopUartReader(HReader hr)
@@ -751,7 +864,7 @@ int GetDevInfoByUART(const char *port_str, unsigned int speed, unsigned int chec
             break;
         }
 
-        int tmp = read(hPort, buf + rf, check_size - rf);
+        int tmp = SystemAPI::Read(hPort, buf + rf, check_size - rf);
         if (tmp > 0)
         {
             rf += tmp;
@@ -840,7 +953,7 @@ bool IsLidarSpinning(const char *port_str)
 			break;
 		}
         
-        int tmp = read(hPort, buf + rf, check_size - rf);
+        int tmp = SystemAPI::Read(hPort, buf + rf, check_size - rf);
         if (tmp > 0)
         {
             rf += tmp;
@@ -897,3 +1010,4 @@ int GetComBaud(std::string uartname, Parser* hParser)
 	}
 	return 0;
 }
+

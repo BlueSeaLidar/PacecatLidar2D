@@ -592,6 +592,25 @@ bool PaceCatLidarSDK::SetNTP(int ID, char *ntp_ip, unsigned int port, bool enabl
 	}
 	return false;
 }
+
+bool PaceCatLidarSDK::SetPTP(int ID, bool enable)
+{
+	RunConfig *lidar = NULL;
+	for (unsigned int i = 0; i < m_lidars.size(); i++)
+	{
+		if (m_lidars.at(i)->ID == ID)
+		{
+			lidar = m_lidars.at(i);
+		}
+	}
+	if (lidar == NULL)
+		return false;
+
+	char cmd[16] = { 0 };
+	sprintf(cmd, "LSPTP:%dH", enable);
+	return SetDevInfo(lidar, strlen(cmd), cmd, S_PACK);
+}
+
 bool PaceCatLidarSDK::SetRES(int ID, unsigned int res)
 {
 	RunConfig *lidar = NULL;

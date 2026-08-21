@@ -1,5 +1,7 @@
 ﻿#include "../include/global.h"
 
+int g_uart_record_enabled = 0;
+
 std::string BaseAPI::stringfilter(char *str, int num)
 {
 	int index = 0;
@@ -109,4 +111,13 @@ uint64_t SystemAPI::getTimestamp(TimeUnit unit) {
         default:
             return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     }
+}
+
+int SystemAPI::Read(int __fd, void* __buf, int __nbytes)
+{
+    errno = 0;
+    int ret = read(__fd, __buf, __nbytes);
+    if (ret == -1 && errno == EAGAIN)   //重试
+        return 0;
+    return ret;
 }

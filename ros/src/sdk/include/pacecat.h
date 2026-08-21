@@ -5,7 +5,7 @@
 #include"usererror.h"
 
 
-#define PACECAT_VERSION "2.6.8"
+#define PACECAT_VERSION "2.6.10_2026081101"
 
 class PaceCatLidarDriver
 {

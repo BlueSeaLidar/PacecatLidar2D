@@ -29,3 +29,9 @@ rpm:-1
 direction:-1
 ats:-1
 with_start:-1
+#ntp
+ntp_ip:192.168.0.111
+ntp_port:5678
+ntp_enable:-1
+#ptp
+ptp_enable:-1

@@ -74,6 +74,7 @@ static Error NTP_IP_FORMAT_ERROR(-117,"ntp ip format set error");
 static Error DROP_PACKET(-118,"drop packet");
 static Error SUBPACKET_MERGE_ERROR(-119,"subpacket merge timestamp error");
 static Error SUBPACKET_REPEAT(-120,"subpacket data repeat");
+static Error NTP_PTP_CONFLICT(-121,"NTP and PTP cannot be enabled at the same time");
 
 
 static Error ALARM_LOWPOWER(-201,"Insufficient power supply, or occasional undervoltage");

@@ -88,6 +88,8 @@ struct RunScript
 	char ntp_ip[16];
 	int ntp_port;
 	int ntp_enable;
+	//ptp
+	int ptp_enable;
 };
 
 //运行配置 

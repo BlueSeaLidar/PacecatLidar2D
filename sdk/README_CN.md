@@ -6,7 +6,7 @@
 ## LINUX 系统 ##
 前置条件：必须安装g++和gcc编译器
 
-	cmake CMakeList.txt
+	cmake CMakeLists.txt
 	make
 	make install
 	./demo config/xxxx.txt  
