@@ -1,6 +1,98 @@
-﻿#include "../include/global.h"
+#include "../include/global.h"
+#include <stdio.h>
+#include <pthread.h>
+#include <sys/stat.h>
 
 int g_uart_record_enabled = 0;
+
+// command log
+std::string g_cmd_log_path;
+static pthread_mutex_t g_cmd_log_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+// URER diagnostic state
+volatile bool g_urer_running = false;
+volatile bool g_urer_restart = false;
+
+void cmd_log(const char *fmt, ...)
+{
+	pthread_mutex_lock(&g_cmd_log_mtx);
+
+	// lazy init: create log folder on first call
+	static bool s_log_init = false;
+	if (!s_log_init)
+	{
+		s_log_init = true;
+		// PWD usually preserves the directory where roslaunch was invoked
+		const char *dir = getenv("PWD");
+		if (!dir || dir[0] == '\0')
+		{
+			char cwd[512];
+			dir = getcwd(cwd, sizeof(cwd)) ? cwd : ".";
+		}
+		char dirpath[768];
+		snprintf(dirpath, sizeof(dirpath), "%s/pacecat_log", dir);
+		mkdir(dirpath, 0755);
+		timeval tv;
+		gettimeofday(&tv, NULL);
+		tm t;
+		localtime_r(&tv.tv_sec, &t);
+		char filepath[768];
+		snprintf(filepath, sizeof(filepath), "%s/pacecat_log/pacecat_%04d%02d%02d_%02d%02d%02d.log",
+			dir,
+			t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+		g_cmd_log_path = filepath;
+	}
+
+	FILE *f = fopen(g_cmd_log_path.c_str(), "a");
+	if (f)
+	{
+		timeval tv;
+		gettimeofday(&tv, NULL);
+		tm t;
+		localtime_r(&tv.tv_sec, &t);
+		fprintf(f, "[%04d-%02d-%02d %02d:%02d:%02d.%03d] ",
+				t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+				t.tm_hour, t.tm_min, t.tm_sec, (int)(tv.tv_usec / 1000));
+		va_list ap;
+		va_start(ap, fmt);
+		vfprintf(f, fmt, ap);
+		va_end(ap);
+		fprintf(f, "\n");
+		fclose(f);
+	}
+	pthread_mutex_unlock(&g_cmd_log_mtx);
+}
+
+// 从 C_PACK payload 中提取 UART_STA:/UART ERR: 诊断状态行
+bool ExtractUartStatusLine(const char *payload, int len, char *out, int outlen)
+{
+	const char *marker = NULL;
+	for (int i = 0; i + 9 <= len; i++)
+	{
+		if (memcmp(payload + i, "UART_STA:", 9) == 0 ||
+			memcmp(payload + i, "UART ERR:", 9) == 0)
+		{
+			marker = payload + i;
+			break;
+		}
+	}
+	if (!marker)
+		return false;
+
+	int i = 0;
+	while (i < outlen - 1 && marker + i < payload + len)
+	{
+		char c = marker[i];
+		if (c == '\r' || c == '\n' || c == '\0')
+			break;
+		out[i++] = c;
+	}
+	// 去掉尾部的空格/填充
+	while (i > 0 && out[i - 1] == ' ')
+		i--;
+	out[i] = '\0';
+	return i > 0;
+}
 
 std::string BaseAPI::stringfilter(char *str, int num)
 {

@@ -42,4 +42,16 @@ namespace SystemAPI
 
 extern int g_uart_record_enabled;
 
+// command log
+#include <stdarg.h>
+extern std::string g_cmd_log_path;
+void cmd_log(const char *fmt, ...);
+
+// 从 C_PACK payload 中提取 UART_STA:/UART ERR: 诊断状态行
+bool ExtractUartStatusLine(const char *payload, int len, char *out, int outlen);
+
+// URER diagnostic state
+extern volatile bool g_urer_running;
+extern volatile bool g_urer_restart;
+
 #endif

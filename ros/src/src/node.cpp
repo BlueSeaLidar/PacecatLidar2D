@@ -371,10 +371,10 @@ bool control_motor(pacecat::Control::Request &req, pacecat::Control::Response &r
 		res.value = "unknown cmd";
 		return true;
 	}
-	ROS_INFO("action:%s  cmd:%s  proto:%u", req.func.c_str(), cmd.c_str(), proto);
+	ROS_INFO("action:%s  cmd:%s  proto=0x%04x", req.func.c_str(), cmd.c_str(), proto);
 	res.code = m_driver->sendCmd(req.topic, cmd, proto);
 	if (res.code <= 0)
-		res.value = "Command delivery failed, check the node terminal printout";
+		res.value = "NG";
 	else if (res.code == 1)
 		res.value = "OK";
 

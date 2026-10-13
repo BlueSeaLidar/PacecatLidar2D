@@ -11,6 +11,7 @@ The PaceCat 2D LiDAR development kit supports both Windows and Linux platforms, 
 | [`sdk`](./sdk/) | C++ SDK core library (Windows/Linux) | [SDK Docs](./sdk/README.md) |
 | [`ros`](./ros/) | ROS driver package (Noetic/Melodic) | [ROS Docs](./ros/src/README.md) |
 | [`ros2`](./ros2/) | ROS 2 driver package (Foxy/Humble) | [ROS 2 Docs](./ros2/README.md) |
+| [`ota`](./ota/) | Firmware upgrade tools (serial/UDP) | [Serial](./ota/uart/README.md) · [UDP](./ota/udp/README.md) |
 
 &gt; 💡 Choose the appropriate subproject based on your development platform and requirements.
 

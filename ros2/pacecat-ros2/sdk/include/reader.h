@@ -41,19 +41,19 @@ void StopTCPReader(HReader hr);
 
 //UART
 int open_serial_port(const char *port, int baudrate);
-bool uart_talk(int fd, int n, const char* cmd, int nhdr, const char* hdr_str, int nfetch, char* fetch,int waittime=10,int cachelength=4096);
+bool uart_talk(int fd, int n, const char* cmd, int nhdr, const char* hdr_str, int nfetch, char* fetch,int waittime=1000);
 int GetComBaud(std::string uartname, Parser* hParser);
 
 
 //VPC
-bool vpc_talk(int hcom, int mode, short sn, int len, const char* cmd, int nfetch, void* result);
+bool vpc_talk(int hcom, int mode, short sn, int len, const char* cmd, int nfetch, void* result, int waittime = 1000);
 
 
 //udp
 bool setup_lidar_udp(int handle,Parser* hP, EEpromV101 &param);
 void send_cmd_udp(int fd_udp, const char* dev_ip, int dev_port, int cmd, int sn, int len, const void* snd_buf);
 bool udp_talk_S_PACK(int fd_udp, const char* ip, int port, int n, const char* cmd, void* result);
-bool udp_talk_C_PACK(int fd_udp, const char* lidar_ip, int lidar_port,int n, const char* cmd,int nhdr, const char* hdr_str,int nfetch, char* fetch);
+bool udp_talk_C_PACK(int fd_udp, const char* lidar_ip, int lidar_port,int n, const char* cmd,int nhdr, const char* hdr_str,int nfetch, char* fetch, int timeout_ms = 1000);
 bool udp_talk_GS_PACK(int fd_udp, const char *ip, int port, int n, const char *cmd, void *result);
 
 //common

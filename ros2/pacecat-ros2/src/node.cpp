@@ -435,10 +435,10 @@ bool control_motor(const std::shared_ptr<base::srv::Control::Request> req, std::
 		return true;
 	}
 
-	DEBUG("action:%s  cmd:%s  proto:%u", req->func.c_str(), cmd.c_str(), proto);
+	DEBUG("action:%s  cmd:%s  proto=0x%04x", req->func.c_str(), cmd.c_str(), proto);
 	res->code = m_driver->sendCmd(req->topic, cmd, proto);
 	if (res->code <= 0)
-		res->value = "Command delivery failed, check the node terminal printout";
+		res->value = "NG";
 	else if (res->code == 1)
 		res->value = "OK";
 

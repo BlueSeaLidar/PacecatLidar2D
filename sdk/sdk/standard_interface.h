@@ -2,7 +2,6 @@
 #define __STANDARD_INTERFACE_H__
 
 #include "LidarDataProcess.h"
-#include "LidarCheckService.h"
 #include "error.h"
 #define SDKVERSION "3.2.5" // SDK版本号
 
@@ -276,19 +275,6 @@ public:
 	 * @others:        Repeatable, different from ID
 	 *************************************************/
 	bool SetRES(int ID, unsigned int res);
-
-	/************************************************
-	 * @functionName:  getLidarsList
-	 * @date:          2023-12-13
-	 * @description:   CN:获取网络款雷达的心跳包数据和当前可用的串口雷达  EN:Get heartbeat packet data for networked Lidars and currently available serial Lidars
-	 * @return:        vector
-	 * @others:        The network heartbeat packet contains the received timestamp, which needs to be compared with the current timestamp to see if it is offline.
-	 *************************************************/
-	std::vector<DevConnInfo> getLidarsList();
-	bool OpenHeartService();
-	bool CloseHeartService();
-
-
 	/************************************************
 	 * @functionName:  QueryIDByIp
 	 * @date:          2026-01-22
@@ -315,10 +301,6 @@ public:
 protected:
 	// 设置雷达参数(掉电存储)
 	bool SetDevInfo(RunConfig *lidar, int length, char *cmd, int mode);
-	// 打开本地服务(web测试可视化页面)
-	bool OpenLocalService(int ID);
-	// 关闭本地服务
-	bool CloseLocalService(int ID);
 
 private:
 	static PaceCatLidarSDK *m_sdk;
@@ -327,8 +309,6 @@ private:
 
 	int m_idx;
 	std::vector<RunConfig *> m_lidars;
-
-	LidarCheckService *m_checkservice;
 	//bool m_checkflag; // 控制心跳线程关闭
 };
 void *lidar_service(void *param);

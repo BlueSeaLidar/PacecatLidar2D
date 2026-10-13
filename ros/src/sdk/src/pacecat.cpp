@@ -1,4 +1,5 @@
-﻿#include "../include/pacecat.h"
+#include "../include/pacecat.h"
+#include "../include/global.h"
 PaceCatLidarDriver::PaceCatLidarDriver()
 {
 	m_reader = NULL;
@@ -183,28 +184,33 @@ bool PaceCatLidarDriver::sendCmd(std::string topic, std::string cmd, int proto)
 	if (idx < 0)
 	{
 		ERROR((int)TOPIC_NO_FIND, Error::GetErrorString(TOPIC_NO_FIND).c_str());
+		cmd_log("sendCmd topic=%s cmd=%s -> FAIL: topic not found", topic.c_str(), cmd.c_str());
 		return false;
 	}
 	std::string arg1 = m_argdata.connectargs[idx].arg1;
 	int arg2 = m_argdata.connectargs[idx].arg2;
 
+	cmd_log("sendCmd topic=%s type=%s cmd=%s proto=0x%04x -> sending...", topic.c_str(), m_argdata.type.c_str(), cmd.c_str(), proto);
+
+	bool ret = false;
 	if (m_argdata.type == "uart")
 	{
-		return SendUartCmd(m_reader, cmd.size(), (char *)cmd.c_str());
+		ret = SendUartCmd(m_reader, cmd.size(), (char *)cmd.c_str());
 	}
 	else if (m_argdata.type == "vpc")
 	{
-		return SendVpcCmd(m_reader, cmd.size(), (char *)cmd.c_str());
+		ret = SendVpcCmd(m_reader, cmd.size(), (char *)cmd.c_str());
 	}
 	else if (m_argdata.type == "udp")
 	{
-		return SendUdpCmd(m_reader, arg1, arg2, cmd, proto);
+		ret = SendUdpCmd(m_reader, arg1, arg2, cmd, proto);
 	}
 	// else if (m_argdata.type == "tcp")
 	// {
 	// 	return SendTcpCmd(m_reader, len, cmd,proto);
 	// }
-	return false;
+	cmd_log("sendCmd topic=%s cmd=%s -> %s", topic.c_str(), cmd.c_str(), ret ? "OK" : "NG");
+	return ret;
 }
 
 PubHub *PaceCatLidarDriver::getHub(int i)

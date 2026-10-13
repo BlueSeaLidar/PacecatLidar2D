@@ -1,5 +1,6 @@
 #include "../include/alarm.h"
 #include "../include/reader.h"
+#include "../include/global.h"
 extern int g_timemode;
 
 void send_cmd_udp(int fd_udp, const char *dev_ip, int dev_port, int cmd, int sn, int len, const void *snd_buf)
@@ -35,25 +36,34 @@ bool udp_talk_S_PACK(int fd_udp, const char *ip, int port, int n, const char *cm
 	unsigned short sn = rand();
 	send_cmd_udp(fd_udp, ip, port, 0x0053, sn, n, cmd);
 
-	int nr = 0;
-	for (int i = 0; i < 1000; i++)
+	// 总超时 1s，select 每次 10ms，持续 recvfrom 跳过点云包
+	struct timeval start;
+	gettimeofday(&start, NULL);
+	long long deadline = (long long)start.tv_sec * 1000 + start.tv_usec / 1000 + 1000;
+
+	while (1)
 	{
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		if ((long long)now.tv_sec * 1000 + now.tv_usec / 1000 >= deadline)
+			break;
+
 		fd_set fds;
 		FD_ZERO(&fds);
-
 		FD_SET(fd_udp, &fds);
 
-		struct timeval to = {3, 0};
+		struct timeval to = {0, 10000};
 		int ret = select(fd_udp + 1, &fds, NULL, NULL, &to);
-		if (ret <= 0)
+		if (ret < 0)
 		{
 			ERROR((int)SOCKET_ERR, Error::GetErrorString(SOCKET_ERR).c_str());
 			return false;
 		}
+		if (ret == 0)
+			continue;
 		// read UDP data
 		if (FD_ISSET(fd_udp, &fds))
 		{
-			nr++;
 			sockaddr_in addr;
 			socklen_t sz = sizeof(addr);
 			char buf[1024] = {0};
@@ -69,7 +79,6 @@ bool udp_talk_S_PACK(int fd_udp, const char *ip, int port, int n, const char *cm
 		}
 	}
 
-	// DEBUG("read %d packets, not response\n", nr);
 	ERROR((int)CMD_NO_ANSWER, Error::GetErrorString(CMD_NO_ANSWER).c_str());
 	return false;
 }
@@ -77,26 +86,33 @@ bool udp_talk_S_PACK(int fd_udp, const char *ip, int port, int n, const char *cm
 bool udp_talk_C_PACK(int fd_udp, const char *lidar_ip, int lidar_port,
 					 int n, const char *cmd,
 					 int nhdr, const char *hdr_str,
-					 int nfetch, char *fetch)
+					 int nfetch, char *fetch, int timeout_ms)
 {
 	DEBUG("send command %s", cmd);
 	unsigned short sn = rand();
 	send_cmd_udp(fd_udp, lidar_ip, lidar_port, 0x0043, sn, n, cmd);
 
-	time_t t0 = time(NULL);
-	int ntry = 0;
-	while (time(NULL) < t0 + 3 && ntry < 1000)
+	// 总超时 timeout_ms，select 每次 10ms，持续 recvfrom 跳过点云包
+	struct timeval start;
+	gettimeofday(&start, NULL);
+	long long deadline = (long long)start.tv_sec * 1000 + start.tv_usec / 1000 + timeout_ms;
+
+	while (1)
 	{
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		if ((long long)now.tv_sec * 1000 + now.tv_usec / 1000 >= deadline)
+			break;
+
 		fd_set fds;
 		FD_ZERO(&fds);
 		FD_SET(fd_udp, &fds);
 
-		struct timeval to = {1, 0};
+		struct timeval to = {0, 10000};
 		int ret = select(fd_udp + 1, &fds, NULL, NULL, &to);
 
 		if (ret < 0)
 		{
-			// DEBUG("select error\n");
 			ERROR((int)SOCKET_ERR, Error::GetErrorString(SOCKET_ERR).c_str());
 			return false;
 		}
@@ -108,7 +124,6 @@ bool udp_talk_C_PACK(int fd_udp, const char *lidar_ip, int lidar_port,
 		// read UDP data
 		if (FD_ISSET(fd_udp, &fds))
 		{
-			ntry++;
 			sockaddr_in addr;
 			socklen_t sz = sizeof(addr);
 
@@ -137,7 +152,6 @@ bool udp_talk_C_PACK(int fd_udp, const char *lidar_ip, int lidar_port,
 			}
 		}
 	}
-	// DEBUG("read %d packets, not response\n", ntry);
 	ERROR((int)CMD_NO_ANSWER, Error::GetErrorString(CMD_NO_ANSWER).c_str());
 	return false;
 }
@@ -364,6 +378,96 @@ HReader StartUDPReader(const char *type, unsigned short listen_port, bool is_gro
 	return info;
 }
 
+// URER diagnostic thread args
+struct UrerUdpArg
+{
+	UDPInfo *info;
+	int lidar_idx;
+};
+
+static void *urerUdpThread(void *arg)
+{
+	UrerUdpArg *uarg = (UrerUdpArg *)arg;
+	UDPInfo *info = uarg->info;
+	int idx = uarg->lidar_idx;
+	delete uarg;
+
+	cmd_log("========== URER UDP Diagnostic Start %s:%d ==========", info->lidars[idx].ip, info->lidars[idx].port);
+
+	for (int iter = 0; iter < 10; )
+	{
+		if (g_urer_restart)
+		{
+			g_urer_restart = false;
+			iter = 0;
+			cmd_log("========== URER UDP Diagnostic Restart ==========");
+			continue;
+		}
+
+		info->client_cmd_pause = true;
+		usleep(10000); // 等点云线程真正暂停后再发送
+
+		// 直接发送 LURERH (C_PACK)，在线程内自行接收回复
+		unsigned short sn = rand();
+		send_cmd_udp(info->fd_udp, info->lidars[idx].ip, info->lidars[idx].port, 0x0043, sn, 6, "LURERH");
+
+		char buf[256] = {0};
+		bool ok = false;
+
+		time_t t0 = time(NULL);
+		while (time(NULL) < t0 + 1)
+		{
+			fd_set fds;
+			FD_ZERO(&fds);
+			FD_SET(info->fd_udp, &fds);
+
+			struct timeval to = {0, 50000};
+			int ret = select(info->fd_udp + 1, &fds, NULL, NULL, &to);
+			if (ret <= 0)
+				continue;
+
+			sockaddr_in addr;
+			socklen_t sz = sizeof(addr);
+			unsigned char rbuf[1024] = {0};
+			int nr = recvfrom(info->fd_udp, rbuf, sizeof(rbuf), 0, (struct sockaddr *)&addr, &sz);
+			if (nr <= (int)sizeof(CmdHeader))
+				continue;
+
+			CmdHeader *hdr = (CmdHeader *)rbuf;
+			if (hdr->sign != 0x484c || hdr->sn != sn)
+				continue;
+
+			int paylen = (int)hdr->len;
+			if (paylen > nr - (int)sizeof(CmdHeader))
+				paylen = nr - (int)sizeof(CmdHeader);
+
+			if (ExtractUartStatusLine((const char *)(rbuf + sizeof(CmdHeader)), paylen, buf, sizeof(buf)))
+			{
+				ok = true;
+				break;
+			}
+		}
+
+		info->client_cmd_pause = false;
+
+		if (ok)
+		{
+			cmd_log("URER UDP [%d/10] %s:%d OK\n%s", iter + 1, info->lidars[idx].ip, info->lidars[idx].port, buf);
+		}
+		else
+		{
+			cmd_log("URER UDP [%d/10] %s:%d TIMEOUT", iter + 1, info->lidars[idx].ip, info->lidars[idx].port);
+		}
+
+		iter++;
+		if (iter < 10) sleep(1);
+	}
+
+	cmd_log("========== URER UDP Diagnostic End ==========");
+	g_urer_running = false;
+	return NULL;
+}
+
 bool SendUdpCmd(HReader hr, std::string lidarIp, int port, std::string cmd, int proto)
 {
 	UDPInfo *info = (UDPInfo *)hr;
@@ -374,30 +478,35 @@ bool SendUdpCmd(HReader hr, std::string lidarIp, int port, std::string cmd, int 
 	{
 		if (lidarIp == info->lidars[i].ip && port == info->lidars[i].port)
 		{
-			info->client_cmd_pause = true;
-
-			bool ret = false;
 			if (cmd == "LURERH")
 			{
-				char buf[128] = {0};
-				ret = udp_talk_C_PACK(info->fd_udp, info->lidars[i].ip, info->lidars[i].port,
-					6, "LURERH", 2, "E:", 100, buf);
-				if (ret)
+				if (g_urer_running)
 				{
-					timeval tv;
-					gettimeofday(&tv, NULL);
-					tm t;
-					localtime_r(&tv.tv_sec, &t);
-					DEBUG("URER UDP %s:%d [%04d-%02d-%02d %02d:%02d:%02d.%03d]:\nE:%s",
-						info->lidars[i].ip, info->lidars[i].port,
-						t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
-						t.tm_hour, t.tm_min, t.tm_sec, (int)(tv.tv_usec / 1000), buf);
+					g_urer_restart = true;
+					cmd_log("URER UDP -> RESTART diagnostic");
+					return true;
 				}
+				UrerUdpArg *uarg = new UrerUdpArg;
+				uarg->info = info;
+				uarg->lidar_idx = i;
+				g_urer_running = true;
+				pthread_t tid;
+				pthread_create(&tid, NULL, urerUdpThread, uarg);
+				pthread_detach(tid);
+				cmd_log("URER UDP -> STARTED diagnostic (10s, 1s interval)");
+				return true;
 			}
-			else if (proto == 0x0043)
+
+			info->client_cmd_pause = true;
+			usleep(10000); // 等点云线程真正暂停后再发送
+
+			bool ret = false;
+			if (proto == 0x0043)
 			{
+				// LSTARH(启动扫描) 电机起转，回复较慢，单独放宽到 5s
+				int timeout_ms = (cmd == "LSTARH") ? 5000 : 1000;
 				ret = udp_talk_C_PACK(info->fd_udp, info->lidars[i].ip, info->lidars[i].port,
-					cmd.size(), cmd.c_str(), 2, "OK", 0, NULL);
+					cmd.size(), cmd.c_str(), 2, "OK", 0, NULL, timeout_ms);
 			}
 			else
 			{

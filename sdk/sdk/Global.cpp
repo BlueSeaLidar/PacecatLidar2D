@@ -1,5 +1,4 @@
 ﻿#include "Global.h"
-
 static FanSegment_C7* GetFanSegment(const RawDataHdr7& hdr, uint8_t* pdat, bool with_chk);
 static FanSegment_AA* GetFanSegment(const RawDataHdrAA& hdr, uint8_t* pdat, bool with_chk);
 static int GetFanPointCount(FanSegment_C7* seg);

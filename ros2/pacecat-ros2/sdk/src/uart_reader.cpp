@@ -4,101 +4,151 @@
 
 extern "C" int change_baud(int fd, unsigned int baud);
 
-bool uart_talk(int fd, int n, const char *cmd, int nhdr, const char *hdr_str, int nfetch, char *fetch, int waittime, int CacheLength)
+bool uart_talk(int fd, int n, const char *cmd, int nhdr, const char *hdr_str, int nfetch, char *fetch, int waittime)
 {
 	DEBUG("send command : %s", cmd);
 	write(fd, cmd, n);
 
-	char *buf = new char[CacheLength];
-	int nr = SystemAPI::Read(fd, buf, CacheLength);
-	int idx = waittime;
+	// waittime 为总超时(毫秒)，期间持续读串口、跳过点云数据，直到命中命令回复
+	struct timeval start;
+	gettimeofday(&start, NULL);
+	long long deadline = (long long)start.tv_sec * 1000 + start.tv_usec / 1000 + waittime;
 
-	while (nr < CacheLength)
+	// 最长匹配串长度(hdr_str/cmd/"unsupport")，滑动窗口据此保留跨块重叠
+	int maxMatch = nhdr > n ? nhdr : n;
+	if (maxMatch < 9)
+		maxMatch = 9;
+
+	const int CacheLength = 4096;
+	unsigned char buf[CacheLength];
+	int rlen = 0;     // 缓冲区内已读字节数
+	int searched = 0; // 已搜索到的偏移，保留重叠避免跨块漏匹配
+
+	while (1)
 	{
-		int n = SystemAPI::Read(fd, buf + nr, CacheLength - nr);
-		// printf(" fd %d %d \n",n,nr);
-		if (n > 0)
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		long long now_ms = (long long)now.tv_sec * 1000 + now.tv_usec / 1000;
+		if (now_ms >= deadline)
+			break;
+
+		// 缓冲区将满：丢弃已搜索过的旧数据，仅保留可能跨块匹配的重叠字节
+		if (rlen >= CacheLength - 1)
 		{
-			nr += n;
-			idx = waittime;
+			int keep = maxMatch - 1;
+			if (keep >= rlen)
+				break; // 匹配串长度不小于缓冲区，异常退出
+			memmove(buf, buf + rlen - keep, keep);
+			rlen = keep;
+			searched = 0;
 		}
-		else if (n == 0)
+
+		int room = CacheLength - rlen - 1;
+		if (room <= 0)
+			continue;
+
+		int nread = SystemAPI::Read(fd, buf + rlen, room);
+		if (nread > 0)
 		{
-			idx--;
-			usleep(1000);
-			if (idx == 0)
-			{
-				// printf("read 0 byte max index break\n");
-				break;
-			}
+			rlen += nread;
 		}
-	}
-	// if(idx>0)
-	//     printf("read max byte break\n");
-	for (int i = 0; i < CacheLength - nhdr - nfetch; i++)
-	{
-		if (memcmp(buf + i, hdr_str, nhdr) == 0 && nhdr > 0)
+		else if (nread < 0)
 		{
-			if (nfetch > 0)
+			break; // 读错误
+		}
+		else
+		{
+			// usleep(1000);
+			continue; // 暂无数据
+		}
+
+		// 在 [searched, rlen) 内搜索匹配
+		bool pending = false;
+		for (int i = searched; i < rlen; i++)
+		{
+			// 1) 头部串匹配
+			if (nhdr > 0 && i + nhdr <= rlen && memcmp(buf + i, hdr_str, nhdr) == 0)
 			{
-				if (strcmp(cmd, "LVERSH") == 0 || strcmp(cmd, "LUUIDH") == 0 || strcmp(cmd, "LTYPEH") == 0 || strcmp(cmd, "LQAZNH") == 0 || strcmp(cmd, "LQPSTH") == 0 || strcmp(cmd, "LQNPNH") == 0 || strcmp(cmd, "LQOUTH") == 0 || strcmp(cmd, "LQCIRH") == 0 || strcmp(cmd, "LQFIRH") == 0 || strcmp(cmd, "LQSRPMH") == 0 || strcmp(cmd, "LQSMTH") == 0 || strcmp(cmd, "LQDSWH") == 0 || strcmp(cmd, "LQZTPH") == 0 || strcmp(cmd, "LQSAFH") == 0 || strcmp(cmd, "LQZIRH") == 0 || strcmp(cmd, "LURERH") == 0)
+				// 头部已命中但结果未读完，等待更多数据后从该位置继续
+				if (nfetch > 0 && i + nhdr + nfetch > rlen)
 				{
-					memcpy(fetch, buf + i + nhdr, nfetch);
-					fetch[nfetch] = '\0';
+					searched = i;
+					pending = true;
+					break;
 				}
-				else if (strstr(cmd, "LSRPM") != NULL)
+				if (nfetch > 0)
 				{
-					if (buf[i + nhdr + 1] == 'O' && buf[i + nhdr + 2] == 'K')
+					if (strcmp(cmd, "LVERSH") == 0 || strcmp(cmd, "LUUIDH") == 0 || strcmp(cmd, "LTYPEH") == 0 || strcmp(cmd, "LQAZNH") == 0 || strcmp(cmd, "LQPSTH") == 0 || strcmp(cmd, "LQNPNH") == 0 || strcmp(cmd, "LQOUTH") == 0 || strcmp(cmd, "LQCIRH") == 0 || strcmp(cmd, "LQFIRH") == 0 || strcmp(cmd, "LQSRPMH") == 0 || strcmp(cmd, "LQSMTH") == 0 || strcmp(cmd, "LQDSWH") == 0 || strcmp(cmd, "LQZTPH") == 0 || strcmp(cmd, "LQSAFH") == 0 || strcmp(cmd, "LQZIRH") == 0 || strcmp(cmd, "LURERH") == 0)
+					{
+						memcpy(fetch, buf + i + nhdr, nfetch);
+						fetch[nfetch] = '\0';
+					}
+					else if (strstr(cmd, "LSRPM") != NULL)
+					{
+						if (buf[i + nhdr + 1] == 'O' && buf[i + nhdr + 2] == 'K')
+						{
+							strncpy(fetch, "OK", 3);
+							fetch[2] = '\0';
+						}
+						else if (buf[i + nhdr + 1] == 'e' && buf[i + nhdr + 2] == 'r')
+						{
+							strncpy(fetch, "NG", 3);
+							fetch[2] = '\0';
+						}
+					}
+					else
 					{
 						strncpy(fetch, "OK", 3);
 						fetch[2] = '\0';
 					}
-					else if (buf[i + nhdr + 1] == 'e' && buf[i + nhdr + 2] == 'r')
+				}
+				return true;
+			}
+			// 2) 命令回显匹配
+			if (n > 0 && i + n <= rlen && memcmp(buf + i, cmd, n) == 0)
+			{
+				if (nfetch > 0 && i + n + 3 > rlen)
+				{
+					searched = i;
+					pending = true;
+					break;
+				}
+				if (nfetch > 0)
+				{
+					memcpy(fetch, buf + i + n + 1, 2);
+					if (buf[i + n + 1] == 'E' && buf[i + n + 2] == 'R')
 					{
-						strncpy(fetch, "NG", 3);
-						fetch[2] = '\0';
+						fetch[0] = 'N';
+						fetch[1] = 'G';
 					}
+					fetch[2] = 0;
 				}
-				else
-				{
-					strncpy(fetch, "OK", 3);
-					fetch[2] = '\0';
-				}
+				return true;
 			}
-			return true;
-		}
-		else if (memcmp(buf + i, cmd, n) == 0)
-		{
-			if (nfetch > 0)
+			// 3) unsupport
+			if (i + 9 <= rlen && memcmp(buf + i, "unsupport", 9) == 0)
 			{
-				memcpy(fetch, buf + i + n + 1, 2);
-				if (buf[i + n + 1] == 'E' && buf[i + n + 2] == 'R')
+				if (nfetch > 0)
 				{
-					fetch[0] = 'N';
-					fetch[1] = 'G';
+					strcpy(fetch, "unsupport");
+					fetch[10] = 0;
 				}
-				fetch[2] = 0;
+				return true;
 			}
-			return true;
 		}
-		else if (memcmp(buf + i, "unsupport", 9) == 0)
-		{
-			if (nfetch > 0)
-			{
-				strcpy(fetch, "unsupport");
-				fetch[10] = 0;
-			}
-			return true;
-		}
+
+		if (pending)
+			continue; // 头部已命中但结果未读完，继续读
+
+		// 未命中，保留重叠字节继续读
+		searched = rlen > (maxMatch - 1) ? rlen - (maxMatch - 1) : 0;
 	}
-	delete[] buf;
 
 	ERROR((int)CMD_NO_ANSWER, Error::GetErrorString(CMD_NO_ANSWER).c_str());
-	// DEBUG("read %d bytes, not found %s", nr, hdr_str);
 	return false;
 }
 
-bool vpc_talk(int hcom, int mode, short sn, int len, const char *cmd, int nfetch, void *result)
+bool vpc_talk(int hcom, int mode, short sn, int len, const char *cmd, int nfetch, void *result, int waittime)
 {
 	DEBUG("USB send command : %s\n", cmd);
 	char buffer[2048];
@@ -114,47 +164,93 @@ bool vpc_talk(int hcom, int mode, short sn, int len, const char *cmd, int nfetch
 
 	unsigned int *pcrc = (unsigned int *)(buffer + sizeof(CmdHeader) + len);
 	pcrc[0] = stm32crc((unsigned int *)(buffer + 0), len / 4 + 2);
-	// pcrc[0] = BaseAPI::stm32crc((unsigned int*)(buffer + 0), len / 4 + 2);
 
 	int len2 = len + sizeof(CmdHeader) + 4;
-	int nr = write(hcom, buffer, len2);
-	unsigned char buf[2048];
-	int index = 10;
-	// 4C 48 BC FF   xx xx xx xx  result
-	// 读取之后的10*2048个长度，如果不存在即判定失败
-	while (index--)
+	write(hcom, buffer, len2);
+
+	// waittime 为总超时(毫秒)，期间持续读串口、跳过点云数据，直到命中命令回复
+	struct timeval start;
+	gettimeofday(&start, NULL);
+	long long deadline = (long long)start.tv_sec * 1000 + start.tv_usec / 1000 + waittime;
+
+	// 匹配回复帧所需字节：帧头 + sn + len 字段（C_PACK/S_PACK 的 payload 都在 offset 8）
+	const int CacheLength = 4096;
+	const int matchLen = 8;
+	unsigned char buf[CacheLength];
+	int rlen = 0;     // 缓冲区内已读字节数
+	int searched = 0; // 已搜索到的偏移，保留重叠避免跨块漏匹配
+
+	while (1)
 	{
-		nr = SystemAPI::Read(hcom, buf, sizeof(buf));
-		while (nr < (int)sizeof(buf))
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		long long now_ms = (long long)now.tv_sec * 1000 + now.tv_usec / 1000;
+		if (now_ms >= deadline)
+			break;
+
+		// 缓冲区将满：丢弃已搜索过的旧数据，仅保留可能跨块匹配的重叠字节
+		if (rlen >= CacheLength - 1)
 		{
-			int n = SystemAPI::Read(hcom, buf + nr, sizeof(buf) - nr);
-			if (n > 0)
-				nr += n;
+			int keep = matchLen - 1;
+			if (keep >= rlen)
+				break;
+			memmove(buf, buf + rlen - keep, keep);
+			rlen = keep;
+			searched = 0;
 		}
 
-		for (int i = 0; i < (int)sizeof(buf) - nfetch; i++)
+		int room = CacheLength - rlen - 1;
+		if (room <= 0)
+			continue;
+
+		int nread = SystemAPI::Read(hcom, buf + rlen, room);
+		if (nread > 0)
+		{
+			rlen += nread;
+		}
+		else if (nread < 0)
+		{
+			break; // 读错误
+		}
+		else
+		{
+			// usleep(1000);
+			continue; // 暂无数据
+		}
+
+		// 在 [searched, rlen) 中搜索命令回复帧头
+		bool pending = false;
+		for (int i = searched; i + matchLen <= rlen; i++)
 		{
 			if (mode == C_PACK)
 			{
-				char *fetch = (char *)result;
 				if (buf[i] == 0x4C && buf[i + 1] == 0x48 && buf[i + 2] == 0xBC && buf[i + 3] == 0xFF)
 				{
-					/*int packSN = ((unsigned int)buf[i + 5] << 8) | (unsigned int)buf[i + 4];
+					short packSN = ((unsigned char)buf[i + 5] << 8) | (unsigned char)buf[i + 4];
+					int payloadLen = ((int)buf[i + 7] << 8) | (int)buf[i + 6];
 					if (packSN != sn)
-						continue;*/
+						continue;
 
-					for (int j = 0; j < nfetch; j++)
+					int need = payloadLen < nfetch ? payloadLen : nfetch;
+					if (need <= 0)
+						need = nfetch;
+					// 帧头命中但 payload 未读完，等待更多数据后从该位置继续
+					if (i + 8 + need > rlen)
 					{
-						if ((buf[i + j + 8] >= 33 && buf[i + j + 8] <= 127))
-						{
-							fetch[j] = buf[i + j + 8];
-						}
-						else
-						{
-							fetch[j] = ' ';
-						}
+						searched = i;
+						pending = true;
+						break;
 					}
-					fetch[nfetch] = 0;
+
+					char *fetch = (char *)result;
+					for (int j = 0; j < need; j++)
+					{
+						if (buf[i + 8 + j] >= 33 && buf[i + 8 + j] <= 127)
+							fetch[j] = buf[i + 8 + j];
+						else
+							fetch[j] = ' ';
+					}
+					fetch[need] = 0;
 					return true;
 				}
 			}
@@ -162,19 +258,35 @@ bool vpc_talk(int hcom, int mode, short sn, int len, const char *cmd, int nfetch
 			{
 				if ((buf[i + 2] == 0xAC && buf[i + 3] == 0xB8) || (buf[i + 2] == 0xAC && buf[i + 3] == 0xff))
 				{
-					// printf("%02x  %02x\n", buf[i + 2], buf[i + 3]);
-					// 随机码判定
 					short packSN = ((unsigned char)buf[i + 5] << 8) | (unsigned char)buf[i + 4];
+					int payloadLen = ((int)buf[i + 7] << 8) | (int)buf[i + 6];
 					if (packSN != sn)
 						continue;
 
-					memcpy(result, buf + i + 8, nfetch);
+					int need = payloadLen < nfetch ? payloadLen : nfetch;
+					if (need <= 0)
+						need = nfetch;
+					// 帧头命中但结果未读完，等待更多数据
+					if (i + 8 + need > rlen)
+					{
+						searched = i;
+						pending = true;
+						break;
+					}
+
+					memcpy(result, buf + i + 8, need);
 					return true;
 				}
 			}
 		}
+
+		if (pending)
+			continue; // 帧头已命中但结果未读完，继续读
+
+		// 未命中，保留重叠字节继续读
+		searched = rlen > (matchLen - 1) ? rlen - (matchLen - 1) : 0;
 	}
-	// printf("read %d bytes, not found %s\n", nr, cmd);
+
 	ERROR((int)CMD_NO_ANSWER, Error::GetErrorString(CMD_NO_ANSWER).c_str());
 	return false;
 }
@@ -613,6 +725,11 @@ int UartReader(UartInfo *info)
 		// read UART data
 		if (FD_ISSET(fd_uart, &fds))
 		{
+			if (info->client_cmd_pause)
+			{
+				usleep(50000);
+				continue;
+			}
 			unsigned char buf[512];
 			int nr = SystemAPI::Read(fd_uart, buf, sizeof(buf));
 			if (nr < 0)
@@ -734,44 +851,230 @@ void *StartUartReader(const char *type, const char *port, int baudrate, Parser *
 	return info;
 }
 
+static void *urerUartThread(void *arg)
+{
+	UartInfo *info = (UartInfo *)arg;
+
+	cmd_log("========== URER UART Diagnostic Start ==========");
+
+	for (int iter = 0; iter < 10; )
+	{
+		if (g_urer_restart)
+		{
+			g_urer_restart = false;
+			iter = 0;
+			cmd_log("========== URER UART Diagnostic Restart ==========");
+			continue;
+		}
+
+		info->client_cmd_pause = true;
+		bool ok = false;
+		char buf[128] = {0};
+
+		// 直接发送 LURERH，读取串口回复
+		usleep(10000); // 等点云线程真正暂停后再发送
+		tcflush(info->fd_uart, TCIFLUSH);
+		write(info->fd_uart, "LURERH", 6);
+		char rbuf[4096] = {0};
+		int rlen = 0;
+		int ridx = 50; // 50ms 超时
+		while (rlen < (int)sizeof(rbuf) - 1)
+		{
+			int n = SystemAPI::Read(info->fd_uart, rbuf + rlen, sizeof(rbuf) - 1 - rlen);
+			if (n > 0)
+			{
+				rlen += n;
+				ridx = 50;
+			}
+			else if (n == 0)
+			{
+				ridx--;
+				usleep(1000);
+				if (ridx == 0)
+					break;
+			}
+		}
+		rbuf[rlen] = '\0';
+
+		// 点云数据里含 0x00，strstr 会被截断，改用 memcmp 按字节搜索
+		static const char crlf[] = "\r\n";
+		static const char ok_hdr[] = "LURERH OK";
+		const int crlf_len = (int)sizeof(crlf) - 1;         // 2
+		const int ok_hdr_len = (int)sizeof(ok_hdr) - 1;     // 9
+
+		// 头部用 \r\n 定位，不同雷达的字段名可能不同，不依赖 "Head:"
+		char *head = NULL;
+		for (int i = 0; i <= rlen - crlf_len; i++)
+		{
+			if (memcmp(rbuf + i, crlf, crlf_len) == 0)
+			{
+				head = rbuf + i + crlf_len; // 从第一个 \r\n 之后开始
+				break;
+			}
+		}
+
+		char *okmark = NULL;
+		int start = head ? (int)(head - rbuf) : 0;
+		for (int i = start; i <= rlen - ok_hdr_len; i++)
+		{
+			if (memcmp(rbuf + i, ok_hdr, ok_hdr_len) == 0)
+			{
+				okmark = rbuf + i;
+				break;
+			}
+		}
+
+		if (okmark)
+		{
+			ok = true;
+			char *text = head ? head : okmark;
+			int len = (int)(okmark + ok_hdr_len - text);
+			if (len > 0 && len < (int)sizeof(buf))
+			{
+				memcpy(buf, text, len);
+				buf[len] = '\0';
+			}
+		}
+
+		info->client_cmd_pause = false;
+
+		if (ok)
+			cmd_log("URER UART [%d/10] OK\n%s", iter + 1, buf);
+		else
+			cmd_log("URER UART [%d/10] NG", iter + 1);
+
+		iter++;
+		if (iter < 10) sleep(1);
+	}
+
+	cmd_log("========== URER UART Diagnostic End ==========");
+	g_urer_running = false;
+	return NULL;
+}
+
+static void *urerVpcThread(void *arg)
+{
+	UartInfo *info = (UartInfo *)arg;
+
+	cmd_log("========== URER VPC Diagnostic Start ==========");
+
+	for (int iter = 0; iter < 10; )
+	{
+		if (g_urer_restart)
+		{
+			g_urer_restart = false;
+			iter = 0;
+			cmd_log("========== URER VPC Diagnostic Restart ==========");
+			continue;
+		}
+
+		info->client_cmd_pause = true;
+		bool ok = false;
+		char buf[256] = {0};
+
+		// 直接组 C_PACK 帧发送 LURERH，读取串口回复
+		usleep(10000); // 等点云线程真正暂停后再发送
+		tcflush(info->fd_uart, TCIFLUSH);
+
+		char frame[2048];
+		CmdHeader *hdr = (CmdHeader *)frame;
+		hdr->sign = 0x484c;
+		hdr->cmd = 0x0043; // C_PACK
+		hdr->sn = rand();
+		int flen = ((6 + 3) >> 2) * 4;
+		hdr->len = flen;
+		memset(frame + sizeof(CmdHeader), 0, flen);
+		memcpy(frame + sizeof(CmdHeader), "LURERH", 6);
+		unsigned int *pcrc = (unsigned int *)(frame + sizeof(CmdHeader) + flen);
+		pcrc[0] = stm32crc((unsigned int *)frame, flen / 4 + 2);
+		write(info->fd_uart, frame, flen + sizeof(CmdHeader) + 4);
+
+		unsigned char rbuf[4096] = {0};
+		int rlen = 0;
+		int ridx = 50; // 50ms 超时
+		while (rlen < (int)sizeof(rbuf) - 1)
+		{
+			int n = SystemAPI::Read(info->fd_uart, rbuf + rlen, sizeof(rbuf) - 1 - rlen);
+			if (n > 0)
+			{
+				rlen += n;
+				ridx = 50;
+			}
+			else if (n == 0)
+			{
+				ridx--;
+				usleep(1000);
+				if (ridx == 0)
+					break;
+			}
+			else
+				break;
+		}
+
+		// 找 C_PACK 回复头 4C 48 BC FF，解析 payload 中的 UART_STA:/UART ERR:
+		// 帧结构: 4C 48 BC FF | sn(2) | len(2) | payload(len) | crc(4)
+		static const unsigned char vpc_hdr[] = {0x4C, 0x48, 0xBC, 0xFF};
+		for (int i = 0; i + 8 < rlen; i++)
+		{
+			if (memcmp(rbuf + i, vpc_hdr, 4) != 0)
+				continue;
+			int paylen = rbuf[i + 6] | (rbuf[i + 7] << 8);
+			if (paylen > rlen - (i + 8))
+				paylen = rlen - (i + 8);
+			if (ExtractUartStatusLine((const char *)(rbuf + i + 8), paylen, buf, sizeof(buf)))
+				ok = true;
+			break;
+		}
+
+		info->client_cmd_pause = false;
+
+		if (ok)
+			cmd_log("URER VPC [%d/10] OK\n%s", iter + 1, buf);
+		else
+			cmd_log("URER VPC [%d/10] NG", iter + 1);
+
+		iter++;
+		if (iter < 10) sleep(1);
+	}
+
+	cmd_log("========== URER VPC Diagnostic End ==========");
+	g_urer_running = false;
+	return NULL;
+}
+
 bool SendUartCmd(HReader hr, int len, char *cmd)
 {
 	UartInfo *info = (UartInfo *)hr;
 	if (!info || info->fd_uart <= 0)
 		return false;
 
+	if (strcmp(cmd, "LURERH") == 0)
+	{
+		if (g_urer_running)
+		{
+			g_urer_restart = true;
+			cmd_log("URER UART -> RESTART diagnostic");
+			return true;
+		}
+		g_urer_running = true;
+		pthread_t tid;
+		pthread_create(&tid, NULL, urerUartThread, info);
+		pthread_detach(tid);
+		cmd_log("URER UART -> STARTED diagnostic (10s, 1s interval)");
+		return true;
+	}
+
 	bool ret = false;
 	info->client_cmd_pause = true;
+	usleep(10000); // 等点云线程真正暂停后再发送
 	for (unsigned int i = 0; i < 5; i++)
 	{
 		tcflush(info->fd_uart, TCIFLUSH);
-		if (strcmp(cmd, "LURERH") == 0)
+		int wt = (strcmp(cmd, "LSTARH") == 0) ? 5000 : 1000;
+		if (uart_talk(info->fd_uart, len, cmd, 2, "OK", 0, NULL, wt))
 		{
-			char buf[128] = {0};
-			if (uart_talk(info->fd_uart, 6, "LURERH", 6, "Head: ", 100, buf))
-			{
-				if (strstr(buf, "LURERH OK"))
-				{
-					timeval tv;
-					gettimeofday(&tv, NULL);
-					tm t;
-					localtime_r(&tv.tv_sec, &t);
-					DEBUG("URER UART [%04d-%02d-%02d %02d:%02d:%02d.%03d]:\nHead: %s",
-						t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
-						t.tm_hour, t.tm_min, t.tm_sec, (int)(tv.tv_usec / 1000), buf);
-					ret = true;
-					break;
-				}
-			}
-		}
-		else
-		{
-			int wt = (strcmp(cmd, "LSTARH") == 0) ? 500 : 10;
-			if (uart_talk(info->fd_uart, len, cmd, 2, "OK", 0, NULL, wt))
-			{
-				ret = true;
-				break;
-			}
+			ret = true;
+			break;
 		}
 	}
 	info->client_cmd_pause = false;
@@ -785,31 +1088,31 @@ bool SendVpcCmd(HReader hr, int len, char *cmd)
 	if (!info || info->fd_uart <= 0)
 		return false;
 
+	if (strcmp(cmd, "LURERH") == 0)
+	{
+		if (g_urer_running)
+		{
+			g_urer_restart = true;
+			cmd_log("URER VPC -> RESTART diagnostic");
+			return true;
+		}
+		g_urer_running = true;
+		pthread_t tid;
+		pthread_create(&tid, NULL, urerVpcThread, info);
+		pthread_detach(tid);
+		cmd_log("URER VPC -> STARTED diagnostic (10s, 1s interval)");
+		return true;
+	}
+
 	bool ret = false;
 	info->client_cmd_pause = true;
+	usleep(10000); // 等点云线程真正暂停后再发送
+	int wt = (strcmp(cmd, "LSTARH") == 0) ? 5000 : 1000;
 	for (unsigned int i = 0; i < 5; i++)
 	{
 		tcflush(info->fd_uart, TCIFLUSH);
 		char buf[128] = {0};
-		if (strcmp(cmd, "LURERH") == 0)
-		{
-			if (vpc_talk(info->fd_uart, 0x0043, rand(), 6, "LURERH", 100, buf))
-			{
-				if (buf[0] != 0)
-				{
-					timeval tv;
-					gettimeofday(&tv, NULL);
-					tm t;
-					localtime_r(&tv.tv_sec, &t);
-					DEBUG("URER VPC [%04d-%02d-%02d %02d:%02d:%02d.%03d]:\n%s",
-						t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
-						t.tm_hour, t.tm_min, t.tm_sec, (int)(tv.tv_usec / 1000), buf);
-					ret = true;
-					break;
-				}
-			}
-		}
-		else if (vpc_talk(info->fd_uart, 0x0043, rand(), len, cmd, 100, buf))
+		if (vpc_talk(info->fd_uart, 0x0043, rand(), len, cmd, 100, buf, wt))
 		{
 			if (strstr(buf, "OK"))
 			{

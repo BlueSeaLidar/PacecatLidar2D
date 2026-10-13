@@ -1,5 +1,4 @@
 ﻿#include "standard_interface.h"
-#include "service/LidarWebService.h"
 #include "managerlog.h"
 
 PaceCatLidarSDK *PaceCatLidarSDK::m_sdk = new (std::nothrow) PaceCatLidarSDK();
@@ -20,7 +19,6 @@ void PaceCatLidarSDK::deleteInstance()
 PaceCatLidarSDK::PaceCatLidarSDK()
 {
 	m_idx = 0;
-	m_checkservice = NULL;
 }
 
 PaceCatLidarSDK::~PaceCatLidarSDK()
@@ -132,23 +130,6 @@ bool PaceCatLidarSDK::openDev(int ID)
 		return false;
 	}
 	lidar->state = WORK;
-
-	// 启动web本地服务，主要用于可视化查看雷达点云是否正常，SDK单独集成则不需要
-	if (lidar->runscript.is_open_service)
-	{
-		lidar->state = WORK_AND_WEB;
-		if (OpenLocalService(ID))
-			printf("Please control it through a browser and enter the default address: http://localhost:%d\n", lidar->runscript.service_port);
-		else
-		{
-			printf("Open web thread failed,port:%d\n", lidar->runscript.service_port);
-			return false;
-		}
-	}
-
-	// 启动雷达心跳包线程以及检测当前在线雷达数量
-	OpenHeartService();
-
 	// 判定数据线程是否正常运行
 	int index = 100;
 	while (lidar->action < ONLINE && index > 0)
@@ -240,76 +221,6 @@ const char *PaceCatLidarSDK::getVersion()
 {
 	return SDKVERSION;
 }
-
-void *lidar_service(void *param)
-{
-	int *ID = (int *)param;
-	PaceCatLidarSDK::PaceCatLidarSDK::getInstance()->getLidar(*ID)->webservice->run(*ID);
-	return SUCCESS;
-}
-
-// 打开本地服务
-bool PaceCatLidarSDK::OpenLocalService(int ID)
-{
-	RunConfig *lidar = NULL;
-	for (unsigned int i = 0; i < m_lidars.size(); i++)
-	{
-		if (m_lidars.at(i)->ID == ID)
-		{
-			lidar = m_lidars.at(i);
-		}
-	}
-	if (lidar == NULL)
-		return false;
-	lidar->webservice = new LidarWebService(lidar->runscript.service_port);
-#ifdef __unix__
-	if (pthread_create(&lidar->thread_web, NULL, lidar_service, &lidar->ID) != 0)
-		return false;
-#elif _WIN32
-	if ((int)CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)lidar_service, &lidar->ID, 0, &lidar->thread_web) < 0)
-		return false;
-#endif
-	return true;
-}
-// 关闭本地服务
-bool PaceCatLidarSDK::CloseLocalService(int ID)
-{
-	RunConfig *lidar = NULL;
-	for (unsigned int i = 0; i < m_lidars.size(); i++)
-	{
-		if (m_lidars.at(i)->ID == ID)
-		{
-			lidar = m_lidars.at(i);
-		}
-	}
-	if (lidar == NULL)
-		return false;
-
-	if (m_lidars.at(ID)->state == WORK_AND_WEB)
-	{
-		m_lidars.at(ID)->state = WORK;
-		return true;
-	}
-
-	return false;
-}
-
-bool PaceCatLidarSDK::OpenHeartService()
-{
-	if (m_checkservice == NULL)
-	{
-		m_checkservice = new LidarCheckService();
-	}
-	m_checkservice->run();
-	return true;
-}
-
-bool PaceCatLidarSDK::CloseHeartService()
-{
-	m_checkservice->stop();
-	return true;
-}
-
 // 启停雷达测距
 bool PaceCatLidarSDK::ControlDrv(int ID, int num, char *cmd)
 {
@@ -627,16 +538,6 @@ bool PaceCatLidarSDK::SetRES(int ID, unsigned int res)
 	char cmd[16] = {0};
 	sprintf(cmd, "LSRES:%dH", res);
 	return SetDevInfo(lidar, strlen(cmd), cmd, S_PACK);
-}
-
-std::vector<DevConnInfo> PaceCatLidarSDK::getLidarsList()
-{
-	if (!OpenHeartService()) 
-	{
-		std::vector<DevConnInfo> tmp;
-		return tmp;
-	}
-	return m_checkservice->getLidarsList();
 }
 
 int PaceCatLidarSDK::QueryIDByIp(char* ip)

@@ -2,13 +2,19 @@
 #include "data.h"
 #include <set>
 #include <vector>
-#include <string>
+#include <string.h>
 #include <math.h>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
+#include <limits>
+#include <stdlib.h>
+#include <errno.h>
 #ifdef _WIN32
 #pragma warning(disable:4996)
 #include <Windows.h>
+//Windows(winsock.h)未定义socklen_t,此处补齐以兼容跨平台网络代码
+typedef int socklen_t;
 #ifndef sleep(sec)   Sleep(sec * 1000)
 #define sleep(sec)   Sleep(sec * 1000)
 #endif
@@ -21,6 +27,9 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <termios.h>
+#include <sys/time.h>
+#include <arpa/inet.h>
+#include <dirent.h>
 #define msleep(msec) usleep(msec * 1000)
 #endif
 struct UARTARG

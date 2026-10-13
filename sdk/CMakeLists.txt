@@ -71,6 +71,8 @@ ELSEIF (WIN32)
   
   source_group("Include" FILES ${HEADER_FILES})
   my_add_executable(demo ${SOURCE_FILES} ${HEADER_FILES})
+  #链接winsock库
+  target_link_libraries(demo ws2_32)
 ENDIF ()
 
 #make install   将可执行文件放到指定位置

@@ -21,11 +21,6 @@
 #include<stdio.h>
 #include <stdlib.h>
 #include<vector>
-extern "C"
-{
-	#include"third_party/mongoose/mongoose.h"
-}
-
 #define PI 3.1415926535898
 
 #define MAX_LIDARS 8

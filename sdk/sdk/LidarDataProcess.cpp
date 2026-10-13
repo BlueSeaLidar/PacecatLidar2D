@@ -1,4 +1,4 @@
-#include "LidarDataProcess.h"
+﻿#include "LidarDataProcess.h"
 #include "managerlog.h"
 #include "error.h"
 #include <fstream>
@@ -1252,6 +1252,7 @@ void *lidar_thread_proc_udp(void *param)
 		{
 			if (cfg->mode == S_PACK)
 			{
+				memset(result, 0, sizeof(result));
 				if (CommunicationAPI::udp_talk_S_PACK(cfg->fd, cfg->runscript.connectArg, cfg->runscript.connectArg2, cfg->send_len, cfg->send_cmd, result))
 				{
 					printf("set LiDAR  %s %s\n", cfg->send_cmd, result);
